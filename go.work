@@ -2,28 +2,7 @@ go 1.25.10
 
 use (
 	.
-	autopilotserverrpc
 	lib/lnd
-	lib/lnd/actor
-	lib/lnd/cert
-	lib/lnd/clock
-	lib/lnd/fn
-	lib/lnd/healthcheck
-	lib/lnd/kvdb
-	lib/lnd/queue
-	lib/lnd/sqldb
-	lib/lnd/sqldb/v2
-	lib/lnd/ticker
-	lib/lnd/tlv
-	lib/lnd/tools
-	lib/lnd/tools/linters
-	lib/lnd/tor
 	lib/taproot-assets
-	lib/taproot-assets/docs/examples/basic-price-oracle
 	lib/taproot-assets/taprpc
-	lib/taproot-assets/tools
-	litrpc
-	perms
-	tools
-	tools/linters
 )
