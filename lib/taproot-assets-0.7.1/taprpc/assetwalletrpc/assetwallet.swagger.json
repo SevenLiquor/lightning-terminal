@@ -1,0 +1,1272 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "assetwalletrpc/assetwallet.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "AssetWallet"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/taproot-assets/wallet/internal-key/next": {
+      "post": {
+        "summary": "NextInternalKey derives the next internal key for the given key family and\nstores it as an internal key in the database to make sure it is identified\nas a local key later on when importing proofs. While an internal key can\nalso be used as the internal key of a script key, it is recommended to use\nthe NextScriptKey RPC instead, to make sure the tweaked Taproot output key\nis also recognized as a local key.",
+        "operationId": "AssetWallet_NextInternalKey",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcNextInternalKeyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcNextInternalKeyRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AssetWallet"
+        ]
+      }
+    },
+    "/v1/taproot-assets/wallet/internal-key/{internal_key}": {
+      "get": {
+        "summary": "QueryInternalKey returns the key descriptor for the given internal key.",
+        "operationId": "AssetWallet_QueryInternalKey",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcQueryInternalKeyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "internal_key",
+            "description": "The internal key to look for. This can either be the 32-byte x-only raw\ninternal key or the 33-byte raw internal key with the parity byte.",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "byte"
+          }
+        ],
+        "tags": [
+          "AssetWallet"
+        ]
+      }
+    },
+    "/v1/taproot-assets/wallet/ownership/prove": {
+      "post": {
+        "summary": "tapcli: `proofs proveownership`\nProveAssetOwnership creates an ownership proof embedded in an asset\ntransition proof. That ownership proof is a signed virtual transaction\nspending the asset with a valid witness to prove the prover owns the keys\nthat can spend the asset.",
+        "operationId": "AssetWallet_ProveAssetOwnership",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcProveAssetOwnershipResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcProveAssetOwnershipRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AssetWallet"
+        ]
+      }
+    },
+    "/v1/taproot-assets/wallet/ownership/verify": {
+      "post": {
+        "summary": "tapcli: `proofs verifyownership`\nVerifyAssetOwnership verifies the asset ownership proof embedded in the\ngiven transition proof of an asset and returns true if the proof is valid.",
+        "operationId": "AssetWallet_VerifyAssetOwnership",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcVerifyAssetOwnershipResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcVerifyAssetOwnershipRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AssetWallet"
+        ]
+      }
+    },
+    "/v1/taproot-assets/wallet/script-key/declare": {
+      "post": {
+        "summary": "DeclareScriptKey declares a new script key to the wallet. This is useful\nwhen the script key contains scripts, which would mean it wouldn't be\nrecognized by the wallet automatically. Declaring a script key will make any\nassets sent to the script key be recognized as being local assets.",
+        "operationId": "AssetWallet_DeclareScriptKey",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcDeclareScriptKeyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcDeclareScriptKeyRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AssetWallet"
+        ]
+      }
+    },
+    "/v1/taproot-assets/wallet/script-key/next": {
+      "post": {
+        "summary": "NextScriptKey derives the next script key (and its corresponding internal\nkey) and stores them both in the database to make sure they are identified\nas local keys later on when importing proofs.",
+        "operationId": "AssetWallet_NextScriptKey",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcNextScriptKeyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcNextScriptKeyRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AssetWallet"
+        ]
+      }
+    },
+    "/v1/taproot-assets/wallet/script-key/{tweaked_script_key}": {
+      "get": {
+        "summary": "QueryScriptKey returns the full script key descriptor for the given tweaked\nscript key.",
+        "operationId": "AssetWallet_QueryScriptKey",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcQueryScriptKeyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tweaked_script_key",
+            "description": "The tweaked script key to look for. This can either be the 32-byte\nx-only tweaked script key or the 33-byte tweaked script key with the\nparity byte.",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "byte"
+          }
+        ],
+        "tags": [
+          "AssetWallet"
+        ]
+      }
+    },
+    "/v1/taproot-assets/wallet/utxo-lease/delete": {
+      "post": {
+        "summary": "`tapcli: assets removelease`\nRemoveUTXOLease removes the lease/lock/reservation of the given managed\nUTXO.",
+        "operationId": "AssetWallet_RemoveUTXOLease",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcRemoveUTXOLeaseResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcRemoveUTXOLeaseRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AssetWallet"
+        ]
+      }
+    },
+    "/v1/taproot-assets/wallet/virtual-psbt/anchor": {
+      "post": {
+        "summary": "AnchorVirtualPsbts merges and then commits multiple virtual transactions in\na single BTC level anchor transaction. This RPC should be used if the BTC\nlevel anchor transaction of the assets to be spent are encumbered by a\nnormal key and don't require any special spending conditions. For any custom\nspending conditions on the BTC level, the two RPCs CommitVirtualPsbts and\nPublishAndLogTransfer should be used instead (which in combination do the\nsame as this RPC but allow for more flexibility).",
+        "operationId": "AssetWallet_AnchorVirtualPsbts",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/taprpcSendAssetResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcAnchorVirtualPsbtsRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AssetWallet"
+        ]
+      }
+    },
+    "/v1/taproot-assets/wallet/virtual-psbt/commit": {
+      "post": {
+        "summary": "CommitVirtualPsbts creates the output commitments and proofs for the given\nvirtual transactions by committing them to the BTC level anchor transaction.\nIn addition, the BTC level anchor transaction is funded and prepared up to\nthe point where it is ready to be signed.",
+        "operationId": "AssetWallet_CommitVirtualPsbts",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcCommitVirtualPsbtsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcCommitVirtualPsbtsRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AssetWallet"
+        ]
+      }
+    },
+    "/v1/taproot-assets/wallet/virtual-psbt/fund": {
+      "post": {
+        "summary": "FundVirtualPsbt selects inputs from the available asset commitments to fund\na virtual transaction matching the template.",
+        "operationId": "AssetWallet_FundVirtualPsbt",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcFundVirtualPsbtResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcFundVirtualPsbtRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AssetWallet"
+        ]
+      }
+    },
+    "/v1/taproot-assets/wallet/virtual-psbt/log-transfer": {
+      "post": {
+        "summary": "PublishAndLogTransfer accepts a fully committed and signed anchor\ntransaction and publishes it to the Bitcoin network. It also logs the\ntransfer of the given active and passive assets in the database and ships\nany outgoing proofs to the counterparties.",
+        "operationId": "AssetWallet_PublishAndLogTransfer",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/taprpcSendAssetResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcPublishAndLogRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AssetWallet"
+        ]
+      }
+    },
+    "/v1/taproot-assets/wallet/virtual-psbt/sign": {
+      "post": {
+        "summary": "SignVirtualPsbt signs the inputs of a virtual transaction and prepares the\ncommitments of the inputs and outputs.",
+        "operationId": "AssetWallet_SignVirtualPsbt",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcSignVirtualPsbtResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/assetwalletrpcSignVirtualPsbtRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AssetWallet"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "assetwalletrpcAnchorVirtualPsbtsRequest": {
+      "type": "object",
+      "properties": {
+        "virtual_psbts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "byte"
+          },
+          "description": "The list of virtual transactions that should be merged and committed to in\nthe BTC level anchor transaction."
+        }
+      }
+    },
+    "assetwalletrpcCoinSelectType": {
+      "type": "string",
+      "enum": [
+        "COIN_SELECT_DEFAULT",
+        "COIN_SELECT_BIP86_ONLY",
+        "COIN_SELECT_SCRIPT_TREES_ALLOWED"
+      ],
+      "default": "COIN_SELECT_DEFAULT",
+      "description": " - COIN_SELECT_DEFAULT: Use the default coin selection type, which currently allows script keys and\nkey spend paths.\n - COIN_SELECT_BIP86_ONLY: Explicitly only select inputs that are known to be BIP-086 compliant (have\na key-spend path only and no script tree).\n - COIN_SELECT_SCRIPT_TREES_ALLOWED: Allow the selection of inputs that have a script tree spend path as well as\na key spend path."
+    },
+    "assetwalletrpcCommitVirtualPsbtsRequest": {
+      "type": "object",
+      "properties": {
+        "virtual_psbts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "byte"
+          },
+          "description": "The list of virtual transactions that should be mapped to the given BTC\nlevel anchor transaction template. The virtual transactions are expected to\nbe signed (or use ASSET_VERSION_V1 with segregated witness to allow for\nsigning after committing) and ready to be committed to the anchor\ntransaction."
+        },
+        "passive_asset_psbts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "byte"
+          },
+          "description": "The list of passive virtual transactions that are anchored in the same BTC\nlevel anchor transaction inputs as the \"active\" assets above. These can be\nobtained by calling FundVirtualPsbt and using the passive assets returned.\nThe virtual transactions are expected to be signed (or use ASSET_VERSION_V1\nwith segregated witness to allow for signing after committing) and ready to\nbe committed to the anchor transaction.\nThe main difference to the \"active\" assets above is that the passive assets\nwill not get their own entry in the transfer table of the database, since\nthey are just carried along and not directly affected by the direct user\naction."
+        },
+        "anchor_psbt": {
+          "type": "string",
+          "format": "byte",
+          "description": "The template of the BTC level anchor transaction that the virtual\ntransactions should be mapped to. The template is expected to already\ncontain all asset related inputs and outputs corresponding to the virtual\ntransactions given above. This can be achieved by using\ntapfreighter.PrepareAnchoringTemplate for example."
+        },
+        "existing_output_index": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Use the existing output within the anchor PSBT with the specified\nindex as the change output. Any leftover change will be added to the\nalready specified amount of that output. To add a new change output to\nthe PSBT, set the \"add\" field below instead."
+        },
+        "add": {
+          "type": "boolean",
+          "description": "Add a new P2TR change output to the PSBT if required."
+        },
+        "target_conf": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The target number of blocks that the transaction should be confirmed in."
+        },
+        "sat_per_vbyte": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The fee rate, expressed in sat/vbyte, that should be used to fund the\nBTC level anchor transaction."
+        },
+        "custom_lock_id": {
+          "type": "string",
+          "format": "byte",
+          "description": "The custom lock ID used to identify the lock lease for UTXOs that serve as\ninputs in the BTC-level anchor transaction. If left empty, LND's default\nlock ID will be used."
+        },
+        "lock_expiration_seconds": {
+          "type": "string",
+          "format": "uint64",
+          "description": "If set, the UTXOs used as inputs in the BTC-level anchor transaction will be\nlocked for the specified number of seconds. If unset, LND's default lock\nexpiration of 10 minutes will be applied."
+        },
+        "skip_funding": {
+          "type": "boolean",
+          "description": "If set, the psbt funding step will be skipped. This is useful if the intent\nis to create a zero-fee transaction."
+        }
+      }
+    },
+    "assetwalletrpcCommitVirtualPsbtsResponse": {
+      "type": "object",
+      "properties": {
+        "anchor_psbt": {
+          "type": "string",
+          "format": "byte",
+          "description": "The funded BTC level anchor transaction with all outputs updated to commit\nto the virtual transactions given. The transaction is ready to be signed,\nunless some of the asset inputs don't belong to this daemon, in which case\nthe anchor input derivation info must be added to those inputs first."
+        },
+        "virtual_psbts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "byte"
+          },
+          "description": "The updated virtual transactions that now contain the state transition\nproofs for being committed to the BTC level anchor transaction above. If the\nassets in the virtual transaction outputs are ASSET_VERSION_V1 and not yet\nsigned, then the proofs need to be updated to include the witness before\nthey become fully valid."
+        },
+        "passive_asset_psbts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "byte"
+          },
+          "description": "The updated passive virtual transactions that were committed to the same BTC\nlevel anchor transaction as the \"active\" virtual transactions given. If the\nassets in the virtual transaction outputs are ASSET_VERSION_V1 and not yet\nsigned, then the proofs need to be updated to include the witness before\nthey become fully valid."
+        },
+        "change_output_index": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The index of the (added) change output or -1 if no change was left over."
+        },
+        "lnd_locked_utxos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/taprpcOutPoint"
+          },
+          "description": "The list of UTXO lock leases that were acquired for the inputs in the funded\nPSBT packet from lnd. Only inputs added to the PSBT by this RPC are locked,\ninputs that were already present in the PSBT are not locked."
+        }
+      }
+    },
+    "assetwalletrpcDeclareScriptKeyRequest": {
+      "type": "object",
+      "properties": {
+        "script_key": {
+          "$ref": "#/definitions/taprpcScriptKey",
+          "description": "The script key the wallet should be informed about."
+        }
+      }
+    },
+    "assetwalletrpcDeclareScriptKeyResponse": {
+      "type": "object",
+      "properties": {
+        "script_key": {
+          "$ref": "#/definitions/taprpcScriptKey",
+          "description": "The script key that was declared, including the internal key and the\ntweaked script key."
+        }
+      }
+    },
+    "assetwalletrpcFundVirtualPsbtRequest": {
+      "type": "object",
+      "properties": {
+        "psbt": {
+          "type": "string",
+          "format": "byte",
+          "description": "Use an existing PSBT packet as the template for the funded PSBT."
+        },
+        "raw": {
+          "$ref": "#/definitions/assetwalletrpcTxTemplate",
+          "description": "Use the asset outputs and optional asset inputs from this raw template."
+        },
+        "coin_select_type": {
+          "$ref": "#/definitions/assetwalletrpcCoinSelectType",
+          "description": "Specify the type of coins that should be selected. Defaults to allowing both\nscript trees and BIP-086 compliant inputs."
+        }
+      }
+    },
+    "assetwalletrpcFundVirtualPsbtResponse": {
+      "type": "object",
+      "properties": {
+        "funded_psbt": {
+          "type": "string",
+          "format": "byte",
+          "description": "The funded but not yet signed virtual PSBT packet."
+        },
+        "change_output_index": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The index of the added change output or -1 if no change was left over."
+        },
+        "passive_asset_psbts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "byte"
+          },
+          "description": "The list of passive virtual transactions that are anchored in the same BTC\nlevel anchor transaction inputs as the funded \"active\" asset above. These\nassets can be ignored when using the AnchorVirtualPsbts RPC, since they are\nretrieved, signed and committed automatically in that method. But the\npassive assets have to be included in the CommitVirtualPsbts RPC which is\nused when custom BTC level anchor transactions are created.\nThe main difference to the \"active\" asset above is that the passive assets\nwill not get their own entry in the transfer table of the database, since\nthey are just carried along and not directly affected by the direct user\naction."
+        }
+      }
+    },
+    "assetwalletrpcNextInternalKeyRequest": {
+      "type": "object",
+      "properties": {
+        "key_family": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The key family to derive the next internal key for."
+        }
+      }
+    },
+    "assetwalletrpcNextInternalKeyResponse": {
+      "type": "object",
+      "properties": {
+        "internal_key": {
+          "$ref": "#/definitions/taprpcKeyDescriptor",
+          "description": "The full key descriptor of the internal key that was derived."
+        }
+      }
+    },
+    "assetwalletrpcNextScriptKeyRequest": {
+      "type": "object",
+      "properties": {
+        "key_family": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The key family to derive the next script key for."
+        }
+      }
+    },
+    "assetwalletrpcNextScriptKeyResponse": {
+      "type": "object",
+      "properties": {
+        "script_key": {
+          "$ref": "#/definitions/taprpcScriptKey",
+          "description": "The full script key information that was derived, including the\ninternal key and the tweaked script key."
+        }
+      }
+    },
+    "assetwalletrpcPrevId": {
+      "type": "object",
+      "properties": {
+        "outpoint": {
+          "$ref": "#/definitions/taprpcOutPoint",
+          "description": "The bitcoin anchor output on chain that contains the input asset."
+        },
+        "id": {
+          "type": "string",
+          "format": "byte",
+          "description": "The asset ID of the previous asset tree."
+        },
+        "script_key": {
+          "type": "string",
+          "format": "byte",
+          "description": "The tweaked Taproot output key committing to the possible spending\nconditions of the asset."
+        }
+      }
+    },
+    "assetwalletrpcProveAssetOwnershipRequest": {
+      "type": "object",
+      "properties": {
+        "asset_id": {
+          "type": "string",
+          "format": "byte",
+          "description": "The asset ID of the asset to prove ownership of. This is the 32-byte\nasset ID that identifies a particular asset or tranche of assets."
+        },
+        "script_key": {
+          "type": "string",
+          "format": "byte",
+          "description": "The script key that is used to spend the asset."
+        },
+        "outpoint": {
+          "$ref": "#/definitions/taprpcOutPoint",
+          "description": "The outpoint of the asset UTXO that is being proven to be owned by the\nprover."
+        },
+        "challenge": {
+          "type": "string",
+          "format": "byte",
+          "description": "An optional 32-byte challenge that may be used to bind the generated\nproof. This challenge needs to be also presented on the\nVerifyAssetOwnership RPC in order to check the proof against it."
+        }
+      }
+    },
+    "assetwalletrpcProveAssetOwnershipResponse": {
+      "type": "object",
+      "properties": {
+        "proof_with_witness": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
+    "assetwalletrpcPublishAndLogRequest": {
+      "type": "object",
+      "properties": {
+        "anchor_psbt": {
+          "type": "string",
+          "format": "byte",
+          "description": "The funded BTC level anchor transaction with all outputs updated to commit\nto the virtual transactions given. The transaction is ready to be signed,\nunless some of the asset inputs don't belong to this daemon, in which case\nthe anchor input derivation info must be added to those inputs first."
+        },
+        "virtual_psbts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "byte"
+          },
+          "description": "The updated virtual transactions that contain the state transition proofs\nof being committed to the BTC level anchor transaction above."
+        },
+        "passive_asset_psbts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "byte"
+          },
+          "description": "The updated passive virtual transactions that contain the state transition\nproofs of being committed to the BTC level anchor transaction above."
+        },
+        "change_output_index": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The index of the (added) change output or -1 if no change was left over."
+        },
+        "lnd_locked_utxos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/taprpcOutPoint"
+          },
+          "description": "The list of UTXO lock leases that were acquired for the inputs in the funded\nPSBT packet from lnd. Only inputs added to the PSBT by this RPC are locked,\ninputs that were already present in the PSBT are not locked."
+        },
+        "skip_anchor_tx_broadcast": {
+          "type": "boolean",
+          "description": "If set, the anchor transaction will not be broadcast to the network. This\nis useful when an external system handles broadcasting, such as in custom\ntransaction packaging workflows."
+        },
+        "label": {
+          "type": "string",
+          "description": "An optional short label for the transfer. This label can be used to track\nthe progress of the transfer via the logs or an event subscription.\nMultiple transfers can share the same label."
+        }
+      }
+    },
+    "assetwalletrpcQueryInternalKeyResponse": {
+      "type": "object",
+      "properties": {
+        "internal_key": {
+          "$ref": "#/definitions/taprpcKeyDescriptor",
+          "description": "The full key descriptor of the internal key that was queried."
+        }
+      }
+    },
+    "assetwalletrpcQueryScriptKeyResponse": {
+      "type": "object",
+      "properties": {
+        "script_key": {
+          "$ref": "#/definitions/taprpcScriptKey",
+          "description": "The full script key information that was queried, including the\ninternal key and the tweaked script key."
+        }
+      }
+    },
+    "assetwalletrpcRemoveUTXOLeaseRequest": {
+      "type": "object",
+      "properties": {
+        "outpoint": {
+          "$ref": "#/definitions/taprpcOutPoint",
+          "description": "The outpoint of the UTXO to remove the lease for."
+        }
+      }
+    },
+    "assetwalletrpcRemoveUTXOLeaseResponse": {
+      "type": "object"
+    },
+    "assetwalletrpcSignVirtualPsbtRequest": {
+      "type": "object",
+      "properties": {
+        "funded_psbt": {
+          "type": "string",
+          "format": "byte",
+          "description": "The PSBT of the virtual transaction that should be signed. The PSBT must\ncontain all required inputs, outputs, UTXO data and custom fields required\nto identify the signing key."
+        }
+      }
+    },
+    "assetwalletrpcSignVirtualPsbtResponse": {
+      "type": "object",
+      "properties": {
+        "signed_psbt": {
+          "type": "string",
+          "format": "byte",
+          "description": "The signed virtual transaction in PSBT format."
+        },
+        "signed_inputs": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "description": "The indices of signed inputs."
+        }
+      }
+    },
+    "assetwalletrpcTxTemplate": {
+      "type": "object",
+      "properties": {
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/assetwalletrpcPrevId"
+          },
+          "description": "An optional list of inputs to use. Every input must be an asset UTXO known\nto the wallet. The sum of all inputs must be greater than or equal to the\nsum of all outputs.\n\nIf no inputs are specified, asset coin selection will be performed instead\nand inputs of sufficient value will be added to the resulting PSBT."
+        },
+        "recipients": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "uint64"
+          },
+          "description": "DEPRECATED: A map of all Taproot Asset addresses that should be sent to.\nThe keys are the Taproot Asset addresses in human-readable form, and the\nvalues are IGNORED and should not be set (use the addresses_with_amounts\nfield below instead). The recipients map and addresses_with_amounts list\nare mutually exclusive, meaning that if addresses_with_amounts is set, then\nrecipients must be empty, and vice versa."
+        },
+        "addresses_with_amounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/taprpcAddressWithAmount"
+          },
+          "description": "A list of addresses and the amounts of asset units to send to them. This\nmust be used for V2 TAP addresses that don't specify an amount in the\naddress itself and allow the sender to choose the amount to send. The\nrecipients and addresses_with_amounts lists are mutually exclusive,\nmeaning that if addresses_with_amounts is set, then recipients must be\nempty, and vice versa."
+        }
+      }
+    },
+    "assetwalletrpcVerifyAssetOwnershipRequest": {
+      "type": "object",
+      "properties": {
+        "proof_with_witness": {
+          "type": "string",
+          "format": "byte",
+          "description": "The full ownership proof that was generated, including the witness data\nthat contains the proving signature."
+        },
+        "challenge": {
+          "type": "string",
+          "format": "byte",
+          "description": "An optional 32-byte challenge that may be used to check the ownership\nproof against. This challenge must match the one that the prover used\non the ProveAssetOwnership RPC."
+        }
+      }
+    },
+    "assetwalletrpcVerifyAssetOwnershipResponse": {
+      "type": "object",
+      "properties": {
+        "valid_proof": {
+          "type": "boolean",
+          "description": "Whether the ownership proof is valid or not."
+        },
+        "outpoint": {
+          "$ref": "#/definitions/taprpcOutPoint",
+          "description": "The outpoint the proof commits to."
+        },
+        "outpoint_str": {
+          "type": "string",
+          "description": "The outpoint in the human-readable form \"hash:index\"."
+        },
+        "block_hash": {
+          "type": "string",
+          "format": "byte",
+          "description": "The block hash the output is part of."
+        },
+        "block_hash_str": {
+          "type": "string",
+          "description": "The block hash as hexadecimal string of the byte-reversed hash."
+        },
+        "block_height": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The block height of the block the output is part of."
+        }
+      }
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "taprpcAddressWithAmount": {
+      "type": "object",
+      "properties": {
+        "tap_addr": {
+          "type": "string",
+          "description": "The TAP address to send assets to."
+        },
+        "amount": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The amount of asset units to send to the address. This is only used for\nre-usable V2 addresses that don't specify an amount in the address itself\nand allow the sender to specify the amount on each send attempt. For V0\nor V1 addresses, this can be left empty (zero) as the amount is taken\nfrom the address itself."
+        }
+      }
+    },
+    "taprpcAssetTransfer": {
+      "type": "object",
+      "properties": {
+        "transfer_timestamp": {
+          "type": "string",
+          "format": "int64",
+          "description": "The timestamp of the transfer in UTC Unix time seconds."
+        },
+        "anchor_tx_hash": {
+          "type": "string",
+          "format": "byte",
+          "description": "The new transaction that commits to the set of Taproot Assets found at\nthe above new anchor point. Note that this is in raw byte format, not\nthe reversed hex string format that is used for displayed txids. When\nlisting assets on the CLI we purposefully use the display format so it\nis easier to copy and paste into other tools."
+        },
+        "anchor_tx_height_hint": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The height hint of the anchor transaction. This is the height at which\nthe anchor transaction was published, so the actual inclusion height\nwill be greater than this value."
+        },
+        "anchor_tx_chain_fees": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total fees paid by the anchor transaction in satoshis."
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/taprpcTransferInput"
+          },
+          "description": "Describes the set of spent assets."
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/taprpcTransferOutput"
+          },
+          "description": "Describes the set of newly created asset outputs."
+        },
+        "anchor_tx_block_hash": {
+          "$ref": "#/definitions/taprpcChainHash",
+          "description": "The block hash of the blockchain block that contains the anchor\ntransaction. If this value is unset, the anchor transaction is\nunconfirmed."
+        },
+        "anchor_tx_block_height": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The block height of the blockchain block that contains the anchor\ntransaction. If the anchor transaction is still unconfirmed, this value\nwill be 0."
+        },
+        "label": {
+          "type": "string",
+          "description": "An optional short label for the transfer. This label can be used to track\nthe progress of the transfer via the logs or an event subscription.\nMultiple transfers can share the same label."
+        },
+        "anchor_tx": {
+          "type": "string",
+          "format": "byte",
+          "description": "The L1 transaction that anchors the Taproot Asset commitment where the\nasset resides."
+        }
+      }
+    },
+    "taprpcAssetVersion": {
+      "type": "string",
+      "enum": [
+        "ASSET_VERSION_V0",
+        "ASSET_VERSION_V1"
+      ],
+      "default": "ASSET_VERSION_V0",
+      "description": " - ASSET_VERSION_V0: ASSET_VERSION_V0 is the default asset version. This version will include\nthe witness vector in the leaf for a tap commitment.\n - ASSET_VERSION_V1: ASSET_VERSION_V1 is the asset version that leaves out the witness vector\nfrom the MS-SMT leaf encoding."
+    },
+    "taprpcChainHash": {
+      "type": "object",
+      "properties": {
+        "hash": {
+          "type": "string",
+          "format": "byte",
+          "description": "The raw hash value in byte format.\n\nThis format is optimized for programmatic use, particularly for Go\ndevelopers, enabling easy integration with other RPC calls or binary\noperations."
+        },
+        "hash_str": {
+          "type": "string",
+          "description": "The byte-reversed hash value as a hexadecimal string.\n\nThis format is intended for human interaction, making it easy to copy,\npaste, and use in contexts like command-line arguments or configuration\nfiles."
+        }
+      },
+      "description": "ChainHash represents a hash value, typically a double SHA-256 of some data.\nCommon examples include block hashes and transaction hashes.\n\nThis versatile message type is used in various Bitcoin-related messages and\nstructures, providing two different formats of the same hash to accommodate\nboth developer and user needs."
+    },
+    "taprpcKeyDescriptor": {
+      "type": "object",
+      "properties": {
+        "raw_key_bytes": {
+          "type": "string",
+          "format": "byte",
+          "description": "The raw bytes of the key being identified."
+        },
+        "key_loc": {
+          "$ref": "#/definitions/taprpcKeyLocator",
+          "description": "The key locator that identifies which key to use for signing."
+        }
+      }
+    },
+    "taprpcKeyLocator": {
+      "type": "object",
+      "properties": {
+        "key_family": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The family of key being identified."
+        },
+        "key_index": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The precise index of the key being identified."
+        }
+      }
+    },
+    "taprpcOutPoint": {
+      "type": "object",
+      "properties": {
+        "txid": {
+          "type": "string",
+          "format": "byte",
+          "description": "Raw bytes representing the transaction id."
+        },
+        "output_index": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The index of the output on the transaction."
+        }
+      },
+      "description": "Represents a Bitcoin transaction outpoint."
+    },
+    "taprpcOutputType": {
+      "type": "string",
+      "enum": [
+        "OUTPUT_TYPE_SIMPLE",
+        "OUTPUT_TYPE_SPLIT_ROOT"
+      ],
+      "default": "OUTPUT_TYPE_SIMPLE",
+      "description": " - OUTPUT_TYPE_SIMPLE: OUTPUT_TYPE_SIMPLE is a plain full-value or split output that is not a\nsplit root and does not carry passive assets. In case of a split, the\nasset of this output has a split commitment.\n - OUTPUT_TYPE_SPLIT_ROOT: OUTPUT_TYPE_SPLIT_ROOT is a split root output that carries the change\nfrom a split or a tombstone from a non-interactive full value send\noutput. In either case, the asset of this output has a tx witness."
+    },
+    "taprpcProofDeliveryStatus": {
+      "type": "string",
+      "enum": [
+        "PROOF_DELIVERY_STATUS_NOT_APPLICABLE",
+        "PROOF_DELIVERY_STATUS_COMPLETE",
+        "PROOF_DELIVERY_STATUS_PENDING"
+      ],
+      "default": "PROOF_DELIVERY_STATUS_NOT_APPLICABLE",
+      "description": "ProofDeliveryStatus is an enum that describes the status of the delivery of\na proof associated with an asset transfer output.\n\n - PROOF_DELIVERY_STATUS_NOT_APPLICABLE: Delivery is not applicable; the proof will not be delivered.\n - PROOF_DELIVERY_STATUS_COMPLETE: The proof has been successfully delivered.\n - PROOF_DELIVERY_STATUS_PENDING: The proof is pending delivery. This status indicates that the proof has\nnot yet been delivered successfully. One or more attempts at proof\ndelivery may have been made."
+    },
+    "taprpcScriptKey": {
+      "type": "object",
+      "properties": {
+        "pub_key": {
+          "type": "string",
+          "format": "byte",
+          "description": "The full Taproot output key the asset is locked to. This is either a BIP-86\nkey if the tap_tweak below is empty, or a key with the tap tweak applied to\nit."
+        },
+        "key_desc": {
+          "$ref": "#/definitions/taprpcKeyDescriptor",
+          "description": "The key descriptor describing the internal key of the above Taproot key."
+        },
+        "tap_tweak": {
+          "type": "string",
+          "format": "byte",
+          "description": "The optional Taproot tweak to apply to the above internal key. If this is\nempty then a BIP-86 style tweak is applied to the internal key."
+        },
+        "type": {
+          "$ref": "#/definitions/taprpcScriptKeyType",
+          "description": "The type of the script key. This type is either user-declared when custom\nscript keys are added, or automatically determined by the daemon for\nstandard operations (e.g. BIP-86 keys, burn keys, tombstone keys, channel\nrelated keys)."
+        }
+      }
+    },
+    "taprpcScriptKeyType": {
+      "type": "string",
+      "enum": [
+        "SCRIPT_KEY_UNKNOWN",
+        "SCRIPT_KEY_BIP86",
+        "SCRIPT_KEY_SCRIPT_PATH_EXTERNAL",
+        "SCRIPT_KEY_BURN",
+        "SCRIPT_KEY_TOMBSTONE",
+        "SCRIPT_KEY_CHANNEL",
+        "SCRIPT_KEY_UNIQUE_PEDERSEN"
+      ],
+      "default": "SCRIPT_KEY_UNKNOWN",
+      "description": " - SCRIPT_KEY_UNKNOWN: The type of script key is not known. This should only be stored for assets\nwhere we don't know the internal key of the script key (e.g. for imported\nproofs).\n - SCRIPT_KEY_BIP86: The script key is a normal BIP-86 key. This means that the internal key is\nturned into a Taproot output key by applying a BIP-86 tweak to it.\n - SCRIPT_KEY_SCRIPT_PATH_EXTERNAL: The script key is a key that contains a script path that is defined by the\nuser and is therefore external to the tapd wallet. Spending this key\nrequires providing a specific witness and must be signed through the vPSBT\nsigning flow.\n - SCRIPT_KEY_BURN: The script key is a specific un-spendable key that indicates a burnt asset.\nAssets with this key type can never be spent again, as a burn key is a\ntweaked NUMS key that nobody knows the private key for.\n - SCRIPT_KEY_TOMBSTONE: The script key is a specific un-spendable key that indicates a tombstone\noutput. This is only the case for zero-value assets that result from a\nnon-interactive (TAP address) send where no change was left over.\n - SCRIPT_KEY_CHANNEL: The script key is used for an asset that resides within a Taproot Asset\nChannel. That means the script key is either a funding key (OP_TRUE), a\ncommitment output key (to_local, to_remote, htlc), or a HTLC second-level\ntransaction output key. Keys related to channels are not shown in asset\nbalances (unless specifically requested) and are never used for coin\nselection.\n - SCRIPT_KEY_UNIQUE_PEDERSEN: The script key is derived using the asset ID and a single leaf that contains\nan un-spendable Pedersen commitment key\n`(OP_CHECKSIG \u003cNUMS_key + asset_id * G\u003e)`. This can be used to create\nunique script keys for each virtual packet in the fragment, to avoid proof\ncollisions in the universe, where the script keys should be spendable by\na hardware wallet that only supports miniscript policies for signing P2TR\noutputs."
+    },
+    "taprpcSendAssetResponse": {
+      "type": "object",
+      "properties": {
+        "transfer": {
+          "$ref": "#/definitions/taprpcAssetTransfer",
+          "description": "The transfer that was created to send assets to one or more addresses."
+        }
+      }
+    },
+    "taprpcTransferInput": {
+      "type": "object",
+      "properties": {
+        "anchor_point": {
+          "type": "string",
+          "description": "The old/current location of the Taproot Asset commitment that was spent\nas an input."
+        },
+        "asset_id": {
+          "type": "string",
+          "format": "byte",
+          "description": "The ID of the asset that was spent."
+        },
+        "script_key": {
+          "type": "string",
+          "format": "byte",
+          "description": "The script key of the asset that was spent."
+        },
+        "amount": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The amount of the asset that was spent."
+        }
+      }
+    },
+    "taprpcTransferOutput": {
+      "type": "object",
+      "properties": {
+        "anchor": {
+          "$ref": "#/definitions/taprpcTransferOutputAnchor",
+          "description": "The transfer output's on-chain anchor information, which contains the\nBTC-level output information that anchors the Taproot Asset commitment\nfor this output."
+        },
+        "script_key": {
+          "type": "string",
+          "format": "byte",
+          "description": "The script key of the asset that was created."
+        },
+        "script_key_is_local": {
+          "type": "boolean",
+          "description": "Indicates whether the script key is known to the wallet of the lnd node\nconnected to the Taproot Asset daemon. If true, the asset will be shown\nin the wallet balance."
+        },
+        "amount": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The amount of the asset that was created in this output."
+        },
+        "new_proof_blob": {
+          "type": "string",
+          "format": "byte",
+          "description": "The new individual transition proof (not a full proof file) that proves\nthe inclusion of the new asset within the new AnchorTx."
+        },
+        "split_commit_root_hash": {
+          "type": "string",
+          "format": "byte",
+          "description": "The split commitment root hash of the asset that was created in this\noutput. This is only set if the asset is a split root output, meaning\nthat the asset is a split root output that carries the change from a\nsplit or a tombstone from a non-interactive full value send output."
+        },
+        "output_type": {
+          "$ref": "#/definitions/taprpcOutputType",
+          "description": "The type of the output. This is used to distinguish between a simple\noutput that is not a split root and does not carry passive assets, and a\nsplit root output that carries the change from a split or a tombstone\nfrom a non-interactive full value send output."
+        },
+        "asset_version": {
+          "$ref": "#/definitions/taprpcAssetVersion",
+          "description": "The asset version of the output. This is used to determine how the asset\nis encoded in the Taproot Asset commitment tree."
+        },
+        "lock_time": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The lock time of the output, which is an optional field that can be set\nto delay the spending of the output until a certain time in the future."
+        },
+        "relative_lock_time": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The relative lock time of the output, which is an optional field that\ncan be set to delay the spending of the output relative to the block\nheight at which the output is confirmed."
+        },
+        "proof_delivery_status": {
+          "$ref": "#/definitions/taprpcProofDeliveryStatus",
+          "description": "The delivery status of the proof associated with this output."
+        },
+        "asset_id": {
+          "type": "string",
+          "format": "byte",
+          "description": "The asset ID of the asset that was created in this output."
+        },
+        "proof_courier_addr": {
+          "type": "string",
+          "description": "The proof courier address that was used to deliver the proof for this\noutput."
+        },
+        "tap_addr": {
+          "type": "string",
+          "description": "The Taproot Asset address that was used to create the output. This is\nonly set for new outputs for tapd versions that support the address V2\nformat. For older versions, this field will be empty."
+        }
+      }
+    },
+    "taprpcTransferOutputAnchor": {
+      "type": "object",
+      "properties": {
+        "outpoint": {
+          "type": "string",
+          "description": "The new location of the Taproot Asset commitment that was created on\nchain."
+        },
+        "value": {
+          "type": "string",
+          "format": "int64",
+          "description": "The anchor transaction output's value in satoshis."
+        },
+        "internal_key": {
+          "type": "string",
+          "format": "byte",
+          "description": "The anchor transaction output's internal key, which is the Taproot\ninternal key of the on-chain output."
+        },
+        "taproot_asset_root": {
+          "type": "string",
+          "format": "byte",
+          "description": "The Taproot Asset root commitment hash, which is the root of the\nTaproot Asset commitment tree for the asset that was created."
+        },
+        "merkle_root": {
+          "type": "string",
+          "format": "byte",
+          "description": "The Taproot merkle root hash committed to by the outpoint of this\noutput. If there is no Tapscript sibling, this is equal to the Taproot\nAsset root commitment hash.\nIf there is a Tapscript sibling, this is the tap branch root hash of the\nTaproot Asset root hash and the tapscript sibling."
+        },
+        "tapscript_sibling": {
+          "type": "string",
+          "format": "byte",
+          "description": "The serialized preimage of a Tapscript sibling, if there was one. If this\nis empty, then the merkle_root hash is equal to the Taproot root hash\nof the anchor output."
+        },
+        "num_passive_assets": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The number of passive assets that were committed to this output.\nPassive assets are assets that are not actively spent, but are instead\npassively carried along with the main asset and re-anchored in the\nanchor output."
+        },
+        "pk_script": {
+          "type": "string",
+          "format": "byte",
+          "description": "The actual output's script, which is the P2TR script for the final\nTaproot output key created by this transfer output."
+        }
+      }
+    }
+  }
+}

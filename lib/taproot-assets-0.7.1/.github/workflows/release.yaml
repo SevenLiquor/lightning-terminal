@@ -1,0 +1,159 @@
+name: Release build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GO_VERSION: 1.25.2
+
+jobs:
+  main:
+    name: Release build
+    runs-on: ubuntu-latest
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set env
+        run: echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Validate release tag ${{ env.RELEASE_VERSION }}
+        run: |
+          expected_tag=$(./scripts/get-git-tag-name.sh version.go)
+          actual_tag=${{ env.RELEASE_VERSION }}
+
+          if [ "$actual_tag" = "$expected_tag" ]; then
+            echo "Git tag release string is as expected."
+          else
+            echo "Error: Versions are not equal. Actual: $actual_tag, Expected: $expected_tag"
+            exit 1
+          fi
+
+      - name: checkout release tag
+        run: git checkout ${{ env.RELEASE_VERSION }}
+
+      - name: build release helper docker image
+        run: |
+          docker build -t taproot-assets-release-helper \
+            -f make/builder.Dockerfile make/
+
+      - name: build release for all architectures
+        run: make docker-release tag=${{ env.RELEASE_VERSION }}
+
+      - name: Create Release
+        uses: lightninglabs/gh-actions/action-gh-release@2024.07.24.00
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          name: ${{ env.RELEASE_VERSION }}
+          draft: true
+          prerelease: false
+          files: taproot-assets-${{ env.RELEASE_VERSION }}/*
+          body: |
+            # Database Migrations
+            TODO
+
+            # Verifying the Release
+
+            In order to verify the release, you'll need to have `gpg` or `gpg2` installed on your system. Once you've obtained a copy (and hopefully verified that as well), you'll first need to import the keys that have signed this release if you haven't done so already: 
+
+            ```
+            curl https://raw.githubusercontent.com/lightninglabs/taproot-assets/main/scripts/keys/roasbeef.asc | gpg --import
+            ```
+
+            Once you have the required PGP keys, you can verify the release (assuming `manifest-roasbeef-${{ env.RELEASE_VERSION }}.sig` and `manifest-${{ env.RELEASE_VERSION }}.txt` are in the current directory) with:
+
+            ```
+            gpg --verify manifest-roasbeef-${{ env.RELEASE_VERSION }}.sig manifest-${{ env.RELEASE_VERSION }}.txt
+            ```
+
+            You should see the following if the verification was successful:
+
+            ```
+            gpg: Signature made Wed Sep 30 17:35:20 2020 PDT
+            gpg:                using RSA key 60A1FA7DA5BFF08BDCBBE7903BBD59E99B280306
+            gpg: Good signature from "Olaoluwa Osuntokun <laolu32@gmail.com>" [ultimate]
+            ```
+
+            That will verify the signature of the manifest file, which ensures integrity and authenticity of the archive you've downloaded locally containing the binaries. Next, depending on your operating system, you should then re-compute the `sha256` hash of the archive with `shasum -a 256 <filename>`, compare it with the corresponding one in the manifest file, and ensure they match *exactly*.
+
+            ## Verifying the Release Timestamp 
+
+            In addition to time-stamping the _git tag_ with [OpenTimestamps](https://opentimestamps.org/), we also timestamp the manifest file along with its signature. Two files are included in our release artifacts: `manifest-roasbeef-${{ env.RELEASE_VERSION }}.sig.ots` and `manifest-${{ env.RELEASE_VERSION }}.txt.ots`.
+
+            Assuming you have the opentimestamps client installed locally, the timestamps can be verified with the following commands: 
+            ```
+            ots verify manifest-roasbeef-${{ env.RELEASE_VERSION }}.sig.ots -f manifest-roasbeef-${{ env.RELEASE_VERSION }}.sig
+            ots verify manifest-${{ env.RELEASE_VERSION }}.txt.ots -f manifest-${{ env.RELEASE_VERSION }}.txt
+            ```
+
+            Alternatively, [the OpenTimestamps website](https://opentimestamps.org/) can be used to verify these timestamps if one doesn't have a `bitcoind` instance accessible locally.
+
+            Assuming you are using the [OpenTimestamps `ots-git-gpg-wrapper`](https://github.com/opentimestamps/opentimestamps-client/blob/master/doc/git-integration.md#usage) you can verify the timestamp of the _git tag_ by  verifying the tag as explained in _Verifying the Release Binaries_.
+
+            These timestamps should give users confidence in the integrity of this release even after the key that signed the release expires. 
+
+            ## Verifying the Release Binaries
+
+            Our release binaries are fully reproducible. Third parties are able to verify that the release binaries were produced properly without having to trust the release manager(s). See our [reproducible builds guide](https://github.com/lightninglabs/taproot-assets/blob/main/docs/release.md) for how this can be achieved.
+            The release binaries are compiled with `go${{ env.GO_VERSION }}`, which is required by verifiers to arrive at the same ones.
+
+            The `make release` command can be used to ensure one rebuilds with all the same flags used for the release. If one wishes to build for only a single platform, then `make release sys=<OS-ARCH> tag=<tag>` can be used. 
+
+            Finally, you can also verify the _tag_ itself with the following command:
+
+            ```
+            $ git verify-tag ${{ env.RELEASE_VERSION }}
+            gpg: Signature made Tue Sep 15 18:55:00 2020 PDT
+            gpg:                using RSA key 60A1FA7DA5BFF08BDCBBE7903BBD59E99B280306
+            gpg: Good signature from "Olaoluwa Osuntokun <laolu32@gmail.com>" [ultimate]
+            ```
+
+            ## Verifying the Docker Images
+
+            To verify the `tapd` and `tapcli` binaries inside the docker images against the signed, reproducible release binaries, there is a verification script in the image that can be called (before starting the container for example):
+
+            ```shell
+            $ docker run --rm --entrypoint="" lightninglabs/taproot-assets:${{ env.RELEASE_VERSION }} /verify-install.sh ${{ env.RELEASE_VERSION }}
+            $ OK=$?
+            $ if [ "$OK" -ne "0" ]; then echo "Verification failed!"; exit 1; done
+            $ docker run lightninglabs/taproot-assets [command-line options]
+            ```
+
+            # Building the Contained Release 
+
+            Users are able to rebuild the target release themselves without having to fetch any of the dependencies. In order to do so, assuming
+            that `vendor.tar.gz` and `tapd-source-${{ env.RELEASE_VERSION }}.tar.gz` are in the current directory, follow these steps:
+
+            ```
+            tar -xvzf vendor.tar.gz
+            tar -xvzf tapd-source-${{ env.RELEASE_VERSION }}.tar.gz
+            go install -v -mod=vendor -ldflags "-X github.com/lightninglabs/taproot-assets/build.Commit=${{ env.RELEASE_VERSION }}" ./cmd/tapd
+            go install -v -mod=vendor -ldflags "-X github.com/lightninglabs/taproot-assets/build.Commit=${{ env.RELEASE_VERSION }}" ./cmd/tapcli
+            ```
+
+            The `-mod=vendor` flag tells the `go build` command that it doesn't need to fetch the dependencies, and instead, they're all enclosed in the local vendor directory. 
+
+            Additionally, it's now possible to use the enclosed `release.sh` script to bundle a release for a _specific_ system like so: 
+
+            ```
+            make release sys="linux-arm64 darwin-amd64"
+            ```
+
+            ⚡️⚡️⚡️ OK, now to the rest of the release notes! ⚡️⚡️⚡️
+
+            # Release Notes
+
+            TODO
+
+            # Contributors (Alphabetical Order)
+
+            TODO

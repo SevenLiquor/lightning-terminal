@@ -1,0 +1,7 @@
+go 1.25
+
+use (
+	.
+	lib/lnd-0.20.1-beta
+	lib/taproot-assets-0.7.1
+)

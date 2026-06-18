@@ -1,0 +1,1146 @@
+-- name: UpsertInternalKey :one
+INSERT INTO internal_keys (
+    raw_key,  key_family, key_index
+) VALUES (
+    $1, $2, $3
+) ON CONFLICT (raw_key)
+    -- This is a NOP, raw_key is the unique field that caused the conflict.
+    DO UPDATE SET raw_key = EXCLUDED.raw_key
+RETURNING key_id;
+
+-- name: NewMintingBatch :exec
+INSERT INTO asset_minting_batches (
+    batch_state, batch_id, height_hint, creation_time_unix, universe_commitments
+) VALUES (0, $1, $2, $3, $4);
+
+-- name: FetchMintingBatchesByInverseState :many
+SELECT *
+FROM asset_minting_batches batches
+JOIN internal_keys keys
+    ON batches.batch_id = keys.key_id
+WHERE batches.batch_state != $1;
+
+-- name: FetchMintingBatch :one
+WITH target_batch AS (
+    -- This CTE is used to fetch the ID of a batch, based on the serialized
+    -- internal key associated with the batch. This internal key is used as the
+    -- actual Taproot internal key to ultimately mint the batch. This pattern
+    -- is used in several other queries.
+    SELECT batch_id
+    FROM asset_minting_batches batches
+    JOIN internal_keys keys
+        ON batches.batch_id = keys.key_id
+    WHERE keys.raw_key = $1
+)
+SELECT *
+FROM asset_minting_batches batches
+JOIN internal_keys keys
+    ON batches.batch_id = keys.key_id
+WHERE batch_id in (SELECT batch_id FROM target_batch);
+
+-- name: UpdateMintingBatchState :exec
+WITH target_batch AS (
+    -- This CTE is used to fetch the ID of a batch, based on the serialized
+    -- internal key associated with the batch. This internal key is used as the
+    -- actual Taproot internal key to ultimately mint the batch. This pattern
+    -- is used in several other queries.
+    SELECT batch_id
+    FROM asset_minting_batches batches
+    JOIN internal_keys keys
+        ON batches.batch_id = keys.key_id
+    WHERE keys.raw_key = $1
+)
+UPDATE asset_minting_batches 
+SET batch_state = $2
+WHERE batch_id in (SELECT batch_id FROM target_batch);
+
+-- name: InsertAssetSeedling :exec
+INSERT INTO asset_seedlings (
+    asset_name, asset_type, asset_version, asset_supply, asset_meta_id,
+    emission_enabled, batch_id, group_genesis_id, group_anchor_id,
+    script_key_id, group_internal_key_id, group_tapscript_root,
+    delegation_key_id, universe_commitments
+) VALUES (
+   @asset_name, @asset_type, @asset_version, @asset_supply,
+   @asset_meta_id, @emission_enabled, @batch_id,
+   sqlc.narg('group_genesis_id'), sqlc.narg('group_anchor_id'),
+   sqlc.narg('script_key_id'), sqlc.narg('group_internal_key_id'),
+   @group_tapscript_root, sqlc.narg('delegation_key_id'),
+   @universe_commitments
+);
+
+-- name: FetchSeedlingID :one
+WITH target_key_id AS (
+    -- We use this CTE to fetch the key_id of the internal key that's
+    -- associated with a given batch. This can only return one value in
+    -- practice since raw_key is a unique field. We then use this value below
+    -- to select only from seedlings in the specified batch.
+    SELECT key_id
+    FROM internal_keys keys
+    WHERE keys.raw_key = @batch_key
+)
+SELECT seedling_id
+FROM asset_seedlings
+WHERE (
+    asset_seedlings.batch_id in (SELECT key_id FROM target_key_id) AND
+    asset_seedlings.asset_name = @seedling_name
+);
+
+-- name: FetchSeedlingByID :one
+SELECT *
+FROM asset_seedlings
+WHERE seedling_id = @seedling_id;
+
+-- name: AllInternalKeys :many
+SELECT * 
+FROM internal_keys;
+
+-- name: AllMintingBatches :many
+SELECT * 
+FROM asset_minting_batches
+JOIN internal_keys 
+ON asset_minting_batches.batch_id = internal_keys.key_id;
+
+-- name: InsertAssetSeedlingIntoBatch :exec
+WITH target_key_id AS (
+    -- We use this CTE to fetch the key_id of the internal key that's
+    -- associated with a given batch. This can only return one value in
+    -- practice since raw_key is a unique field. We then use this value below
+    -- to insert the seedling and point to the proper batch_id, which is a
+    -- foreign key that references the key_id of the internal key.
+    SELECT key_id 
+    FROM internal_keys keys
+    WHERE keys.raw_key = $1
+)
+INSERT INTO asset_seedlings(
+    asset_name, asset_type, asset_version, asset_supply, asset_meta_id,
+    emission_enabled, batch_id, group_genesis_id, group_anchor_id,
+    script_key_id, group_internal_key_id, group_tapscript_root,
+    delegation_key_id, universe_commitments
+) VALUES (
+    @asset_name, @asset_type, @asset_version, @asset_supply,
+    @asset_meta_id, @emission_enabled,
+    (SELECT key_id FROM target_key_id),
+    sqlc.narg('group_genesis_id'), sqlc.narg('group_anchor_id'),
+    sqlc.narg('script_key_id'), sqlc.narg('group_internal_key_id'),
+    @group_tapscript_root, sqlc.narg('delegation_key_id'),
+    @universe_commitments
+);
+
+-- name: FetchSeedlingsForBatch :many
+WITH target_batch(batch_id) AS (
+    SELECT batch_id
+    FROM asset_minting_batches batches
+    JOIN internal_keys keys
+        ON batches.batch_id = keys.key_id
+    WHERE keys.raw_key = $1
+)
+SELECT seedling_id, asset_name, asset_type, asset_version, asset_supply,
+    sqlc.embed(assets_meta),
+    emission_enabled, batch_id, 
+    group_genesis_id, group_anchor_id, group_tapscript_root,
+    -- TODO(guggero): We should use sqlc.embed() for the script key and internal
+    -- key fields, but we can't because it's a LEFT JOIN. We should check if the
+    -- LEFT JOIN is actually necessary or if we always have keys for seedlings.
+    script_keys.tweak AS script_key_tweak,
+    script_keys.tweaked_script_key,
+    script_keys.key_type AS script_key_type,
+    internal_keys.raw_key AS script_key_raw,
+    internal_keys.key_family AS script_key_fam,
+    internal_keys.key_index AS script_key_index,
+    group_internal_keys.raw_key AS group_key_raw,
+    group_internal_keys.key_family AS group_key_fam,
+    group_internal_keys.key_index AS group_key_index,
+    delegation_internal_keys.raw_key AS delegation_key_raw,
+    delegation_internal_keys.key_family AS delegation_key_fam,
+    delegation_internal_keys.key_index AS delegation_key_index,
+    universe_commitments
+FROM asset_seedlings 
+LEFT JOIN assets_meta
+    ON asset_seedlings.asset_meta_id = assets_meta.meta_id
+LEFT JOIN script_keys
+    ON asset_seedlings.script_key_id = script_keys.script_key_id
+LEFT JOIN internal_keys
+    ON script_keys.internal_key_id = internal_keys.key_id
+LEFT JOIN internal_keys group_internal_keys
+    ON asset_seedlings.group_internal_key_id = group_internal_keys.key_id
+LEFT JOIN internal_keys delegation_internal_keys
+    ON asset_seedlings.delegation_key_id = delegation_internal_keys.key_id
+WHERE asset_seedlings.batch_id in (SELECT batch_id FROM target_batch);
+
+-- name: UpsertGenesisPoint :one
+INSERT INTO genesis_points(
+    prev_out
+) VALUES (
+    $1
+) ON CONFLICT (prev_out)
+    -- This is a NOP, prev_out is the unique field that caused the conflict.
+    DO UPDATE SET prev_out = EXCLUDED.prev_out
+RETURNING genesis_id;
+
+-- name: UpsertAssetGroupKey :one
+INSERT INTO asset_groups (
+    version, tweaked_group_key, tapscript_root, internal_key_id,
+    genesis_point_id, custom_subtree_root_id
+) VALUES (
+    $1, $2, $3, $4, $5, $6
+) ON CONFLICT (tweaked_group_key)
+    -- This is not a NOP, update the genesis point ID in case it wasn't set
+    -- before.
+    DO UPDATE SET genesis_point_id = EXCLUDED.genesis_point_id
+RETURNING group_id;
+
+-- name: UpsertAssetGroupWitness :one
+INSERT INTO asset_group_witnesses (
+    witness_stack, gen_asset_id, group_key_id
+) VALUES (
+    $1, $2, $3
+) ON CONFLICT (gen_asset_id)
+    -- This is a NOP, gen_asset_id is the unique field that caused the conflict.
+    DO UPDATE SET gen_asset_id = EXCLUDED.gen_asset_id
+RETURNING witness_id;
+
+-- name: UpsertGenesisAsset :one
+WITH target_meta_id AS (
+    SELECT meta_id
+    FROM assets_meta
+    WHERE meta_data_hash = $1
+)
+INSERT INTO genesis_assets (
+    asset_id, asset_tag, meta_data_id, output_index, asset_type, genesis_point_id
+) VALUES (
+    $2, $3, (SELECT meta_id FROM target_meta_id), $4, $5, $6
+) ON CONFLICT (asset_id)
+    -- This is a NOP, asset_id is the unique field that caused the conflict.
+    DO UPDATE SET asset_id = EXCLUDED.asset_id
+RETURNING gen_asset_id;
+
+-- name: UpsertAsset :one
+INSERT INTO assets (
+    genesis_id, version, script_key_id, asset_group_witness_id, script_version, 
+    amount, lock_time, relative_lock_time, anchor_utxo_id, spent,
+    split_commitment_root_hash, split_commitment_root_value
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+)
+ON CONFLICT (genesis_id, script_key_id, anchor_utxo_id)
+    -- This is a NOP, anchor_utxo_id is one of the unique fields that caused the
+    -- conflict.
+    DO UPDATE SET anchor_utxo_id = EXCLUDED.anchor_utxo_id
+RETURNING asset_id;
+
+-- name: FetchAssetsForBatch :many
+WITH genesis_info AS (
+    -- This CTE is used to fetch the base asset information from disk based on
+    -- the raw key of the batch that will ultimately create this set of assets.
+    -- To do so, we'll need to traverse a few tables to join the set of assets
+    -- with the genesis points, then with the batches that reference this
+    -- points, to the internal key that reference the batch, then restricted
+    -- for internal keys that match our main batch key.
+    SELECT
+        gen_asset_id, asset_id, asset_tag, output_index, asset_type,
+        genesis_points.prev_out prev_out,
+        assets_meta.meta_id
+    FROM genesis_assets
+    LEFT JOIN assets_meta
+        ON genesis_assets.meta_data_id = assets_meta.meta_id
+    JOIN genesis_points
+        ON genesis_assets.genesis_point_id = genesis_points.genesis_id
+    JOIN asset_minting_batches batches
+        ON genesis_points.genesis_id = batches.genesis_id
+    JOIN internal_keys keys
+        ON keys.key_id = batches.batch_id
+    WHERE keys.raw_key = $1
+), key_group_info AS (
+    -- This CTE is used to perform a series of joins that allow us to extract
+    -- the group key information, as well as the group sigs for the series of
+    -- assets we care about. We obtain only the assets found in the batch
+    -- above, with the WHERE query at the bottom.
+    SELECT 
+        witness_id, gen_asset_id, witness_stack, tapscript_root,
+        tweaked_group_key, raw_key, key_index, key_family
+    FROM asset_group_witnesses wit
+    JOIN asset_groups groups
+        ON wit.group_key_id = groups.group_id
+    JOIN internal_keys keys
+        ON keys.key_id = groups.internal_key_id
+    -- TODO(roasbeef): or can join do this below?
+    WHERE wit.gen_asset_id IN (SELECT gen_asset_id FROM genesis_info)
+)
+SELECT 
+    version,
+    sqlc.embed(script_keys),
+    sqlc.embed(internal_keys),
+    key_group_info.tapscript_root, 
+    key_group_info.witness_stack, 
+    key_group_info.tweaked_group_key,
+    key_group_info.raw_key AS group_key_raw,
+    key_group_info.key_family AS group_key_family,
+    key_group_info.key_index AS group_key_index,
+    script_version, amount, lock_time, relative_lock_time, spent,
+    genesis_info.asset_id, genesis_info.asset_tag,
+    sqlc.embed(assets_meta),
+    genesis_info.output_index AS genesis_output_index, genesis_info.asset_type,
+    genesis_info.prev_out AS genesis_prev_out
+FROM assets
+JOIN genesis_info
+    ON assets.genesis_id = genesis_info.gen_asset_id
+-- We use a LEFT JOIN here as not every asset has a meta data entry.
+LEFT JOIN assets_meta
+    ON genesis_info.meta_id = assets_meta.meta_id
+-- We use a LEFT JOIN here as not every asset has a group key, so this'll
+-- generate rows that have NULL values for the group key fields if an asset
+-- doesn't have a group key. See the comment in fetchAssetSprouts for a work
+-- around that needs to be used with this query until a sqlc bug is fixed.
+LEFT JOIN key_group_info
+    ON assets.genesis_id = key_group_info.gen_asset_id
+JOIN script_keys
+    on assets.script_key_id = script_keys.script_key_id
+JOIN internal_keys
+    ON script_keys.internal_key_id = internal_keys.key_id;
+
+-- name: SetAssetSpent :one
+WITH target_asset(asset_id) AS (
+    SELECT assets.asset_id
+    FROM assets
+    JOIN script_keys
+      ON assets.script_key_id = script_keys.script_key_id
+    JOIN genesis_assets
+      ON assets.genesis_id = genesis_assets.gen_asset_id
+    JOIN managed_utxos utxos
+         ON assets.anchor_utxo_id = utxos.utxo_id AND
+            (utxos.outpoint = sqlc.narg('anchor_point') OR
+             sqlc.narg('anchor_point') IS NULL)
+    WHERE script_keys.tweaked_script_key = @script_key
+     AND genesis_assets.asset_id = @gen_asset_id
+)
+UPDATE assets
+SET spent = TRUE
+WHERE asset_id = (SELECT asset_id FROM target_asset)
+RETURNING assets.asset_id;
+
+-- name: QueryAssetBalancesByAsset :many
+SELECT
+    genesis_info_view.asset_id, SUM(amount) balance,
+    genesis_info_view.asset_tag, genesis_info_view.meta_hash,
+    genesis_info_view.asset_type, genesis_info_view.output_index,
+    genesis_info_view.prev_out AS genesis_point,
+    key_group_info_view.tweaked_group_key AS group_key
+FROM assets
+JOIN genesis_info_view
+    ON assets.genesis_id = genesis_info_view.gen_asset_id AND
+      (genesis_info_view.asset_id = sqlc.narg('asset_id_filter') OR
+        sqlc.narg('asset_id_filter') IS NULL)
+-- We use a LEFT JOIN here as not every asset has a group key, so this'll
+-- generate rows that have NULL values for the group key fields if an asset
+-- doesn't have a group key. See the comment in fetchAssetSprouts for a work
+-- around that needs to be used with this query until a sqlc bug is fixed.
+LEFT JOIN key_group_info_view
+    ON assets.genesis_id = key_group_info_view.gen_asset_id
+JOIN managed_utxos utxos
+    ON assets.anchor_utxo_id = utxos.utxo_id AND
+       CASE
+           WHEN sqlc.narg('leased') = true THEN
+               (utxos.lease_owner IS NOT NULL AND utxos.lease_expiry > @now)
+           WHEN sqlc.narg('leased') = false THEN
+               (utxos.lease_owner IS NULL OR 
+                utxos.lease_expiry IS NULL OR
+                utxos.lease_expiry <= @now)
+           ELSE TRUE
+       END
+JOIN script_keys
+    ON assets.script_key_id = script_keys.script_key_id
+WHERE spent = FALSE AND
+  -- The script_key_type argument must NEVER be an empty slice, otherwise this
+  -- query will return no results.
+    COALESCE(script_keys.key_type, 0) IN
+      (sqlc.slice('script_key_type')/*SLICE:script_key_type*/)
+GROUP BY assets.genesis_id, genesis_info_view.asset_id,
+         genesis_info_view.asset_tag, genesis_info_view.meta_hash,
+         genesis_info_view.asset_type, genesis_info_view.output_index,
+         genesis_info_view.prev_out, key_group_info_view.tweaked_group_key;
+
+-- name: QueryAssetBalancesByGroup :many
+SELECT
+    key_group_info_view.tweaked_group_key, SUM(amount) balance
+FROM assets
+JOIN key_group_info_view
+    ON assets.genesis_id = key_group_info_view.gen_asset_id AND
+      (key_group_info_view.tweaked_group_key = sqlc.narg('key_group_filter') OR
+        sqlc.narg('key_group_filter') IS NULL)
+JOIN managed_utxos utxos
+    ON assets.anchor_utxo_id = utxos.utxo_id AND
+       CASE
+           WHEN sqlc.narg('leased') = true THEN
+               (utxos.lease_owner IS NOT NULL AND utxos.lease_expiry > @now)
+           WHEN sqlc.narg('leased') = false THEN
+               (utxos.lease_owner IS NULL OR 
+                utxos.lease_expiry IS NULL OR
+                utxos.lease_expiry <= @now)
+           ELSE TRUE
+       END
+JOIN script_keys
+    ON assets.script_key_id = script_keys.script_key_id
+WHERE spent = FALSE AND
+  -- The script_key_type argument must NEVER be an empty slice, otherwise this
+  -- query will return no results.
+    COALESCE(script_keys.key_type, 0) IN
+      (sqlc.slice('script_key_type')/*SLICE:script_key_type*/)
+GROUP BY key_group_info_view.tweaked_group_key;
+
+-- name: FetchGroupedAssets :many
+SELECT
+    assets.asset_id AS asset_primary_key,
+    amount, lock_time, relative_lock_time, spent, 
+    genesis_info_view.asset_id AS asset_id,
+    genesis_info_view.asset_tag,
+    genesis_info_view.meta_Hash, 
+    genesis_info_view.asset_type,
+    key_group_info_view.tweaked_group_key,
+    assets.version AS asset_version
+FROM assets
+JOIN genesis_info_view
+    ON assets.genesis_id = genesis_info_view.gen_asset_id
+JOIN key_group_info_view
+    ON assets.genesis_id = key_group_info_view.gen_asset_id
+WHERE spent = false;
+
+-- name: FetchGroupByGroupKey :one
+SELECT
+    key_group_info_view.version AS version,
+    key_group_info_view.gen_asset_id AS gen_asset_id,
+    key_group_info_view.raw_key AS raw_key,
+    key_group_info_view.key_index AS key_index,
+    key_group_info_view.key_family AS key_family,
+    key_group_info_view.tapscript_root AS tapscript_root,
+    key_group_info_view.witness_stack AS witness_stack,
+    key_group_info_view.custom_subtree_root AS custom_subtree_root
+FROM key_group_info_view
+WHERE (
+    key_group_info_view.tweaked_group_key = @group_key
+)
+-- Sort and limit to return the genesis ID for initial genesis of the group.
+ORDER BY key_group_info_view.witness_id
+LIMIT 1;
+
+-- name: FetchGroupByGenesis :one
+SELECT
+    key_group_info_view.version AS version,
+    key_group_info_view.tweaked_group_key AS tweaked_group_key,
+    key_group_info_view.raw_key AS raw_key,
+    key_group_info_view.key_index AS key_index,
+    key_group_info_view.key_family AS key_family,
+    key_group_info_view.tapscript_root AS tapscript_root,
+    key_group_info_view.witness_stack AS witness_stack,
+    key_group_info_view.custom_subtree_root AS custom_subtree_root
+FROM key_group_info_view
+WHERE (
+    key_group_info_view.gen_asset_id = @genesis_id
+);
+
+-- name: QueryAssets :many
+SELECT
+    assets.asset_id AS asset_primary_key,
+    assets.genesis_id, assets.version, spent,
+    sqlc.embed(script_keys),
+    sqlc.embed(internal_keys),
+    key_group_info_view.tapscript_root, 
+    key_group_info_view.witness_stack, 
+    key_group_info_view.tweaked_group_key,
+    key_group_info_view.raw_key AS group_key_raw,
+    key_group_info_view.key_family AS group_key_family,
+    key_group_info_view.key_index AS group_key_index,
+    script_version, amount, lock_time, relative_lock_time, 
+    genesis_info_view.asset_id AS asset_id,
+    genesis_info_view.asset_tag,
+    genesis_info_view.meta_hash, 
+    genesis_info_view.output_index AS genesis_output_index,
+    genesis_info_view.asset_type,
+    genesis_info_view.prev_out AS genesis_prev_out,
+    txns.raw_tx AS anchor_tx,
+    txns.txid AS anchor_txid,
+    txns.block_hash AS anchor_block_hash,
+    txns.block_height AS anchor_block_height,
+    utxos.outpoint AS anchor_outpoint,
+    utxos.tapscript_sibling AS anchor_tapscript_sibling,
+    utxos.merkle_root AS anchor_merkle_root,
+    utxos.taproot_asset_root AS anchor_taproot_asset_root,
+    utxos.root_version AS anchor_commitment_version,
+    utxos.lease_owner AS anchor_lease_owner,
+    utxos.lease_expiry AS anchor_lease_expiry,
+    utxo_internal_keys.raw_key AS anchor_internal_key,
+    split_commitment_root_hash, split_commitment_root_value
+FROM assets
+JOIN genesis_info_view
+    ON assets.genesis_id = genesis_info_view.gen_asset_id AND
+      (genesis_info_view.asset_id = sqlc.narg('asset_id_filter') OR
+        sqlc.narg('asset_id_filter') IS NULL)
+-- We use a LEFT JOIN here as not every asset has a group key, so this'll
+-- generate rows that have NULL values for the group key fields if an asset
+-- doesn't have a group key. See the comment in fetchAssetSprouts for a work
+-- around that needs to be used with this query until a sqlc bug is fixed.
+LEFT JOIN key_group_info_view
+    ON assets.genesis_id = key_group_info_view.gen_asset_id
+JOIN script_keys
+    ON assets.script_key_id = script_keys.script_key_id AND
+      (script_keys.tweaked_script_key = sqlc.narg('tweaked_script_key') OR
+       sqlc.narg('tweaked_script_key') IS NULL)
+JOIN internal_keys
+    ON script_keys.internal_key_id = internal_keys.key_id
+JOIN managed_utxos utxos
+    ON assets.anchor_utxo_id = utxos.utxo_id AND
+      (utxos.outpoint = sqlc.narg('anchor_point') OR
+       sqlc.narg('anchor_point') IS NULL) AND
+       CASE
+           WHEN sqlc.narg('leased') = true THEN
+               (utxos.lease_owner IS NOT NULL AND utxos.lease_expiry > @now)
+           WHEN sqlc.narg('leased') = false THEN
+               (utxos.lease_owner IS NULL OR 
+                utxos.lease_expiry IS NULL OR
+                utxos.lease_expiry <= @now)
+           ELSE TRUE
+       END
+JOIN internal_keys utxo_internal_keys
+    ON utxos.internal_key_id = utxo_internal_keys.key_id
+JOIN chain_txns txns
+    ON utxos.txn_id = txns.txn_id AND
+      COALESCE(txns.block_height, 0) >= COALESCE(sqlc.narg('min_anchor_height'), txns.block_height, 0)
+-- This clause is used to select specific assets for a asset ID, general
+-- channel balances, and also coin selection. We use the sqlc.narg feature to
+-- make the entire statement evaluate to true, if none of these extra args are
+-- specified.
+WHERE (
+    assets.amount >= COALESCE(sqlc.narg('min_amt'), assets.amount) AND
+    assets.amount <= COALESCE(sqlc.narg('max_amt'), assets.amount) AND
+    assets.spent = COALESCE(sqlc.narg('spent'), assets.spent) AND
+    (key_group_info_view.tweaked_group_key = sqlc.narg('key_group_filter') OR
+      sqlc.narg('key_group_filter') IS NULL) AND
+    assets.anchor_utxo_id = COALESCE(sqlc.narg('anchor_utxo_id'), assets.anchor_utxo_id) AND
+    assets.genesis_id = COALESCE(sqlc.narg('genesis_id'), assets.genesis_id) AND
+    assets.script_key_id = COALESCE(sqlc.narg('script_key_id'), assets.script_key_id) AND
+    -- The script_key_type argument must NEVER be an empty slice, otherwise this
+    -- query will return no results.
+    COALESCE(script_keys.key_type, 0) IN
+      (sqlc.slice('script_key_type')/*SLICE:script_key_type*/)
+);
+
+-- name: AllAssets :many
+SELECT * 
+FROM assets;
+
+-- name: AssetsInBatch :many
+SELECT
+    gen_asset_id, asset_id, asset_tag, assets_meta.meta_data_hash, 
+    output_index, asset_type, genesis_points.prev_out prev_out
+FROM genesis_assets
+LEFT JOIN assets_meta
+    ON genesis_assets.meta_data_id = assets_meta.meta_id
+JOIN genesis_points
+    ON genesis_assets.genesis_point_id = genesis_points.genesis_id
+JOIN asset_minting_batches batches
+    ON genesis_points.genesis_id = batches.genesis_id
+JOIN internal_keys keys
+    ON keys.key_id = batches.batch_id
+WHERE keys.raw_key = $1;
+
+-- name: BindMintingBatchWithTx :one
+WITH target_batch AS (
+    SELECT batch_id
+    FROM asset_minting_batches batches
+    JOIN internal_keys keys
+        ON batches.batch_id = keys.key_id
+    WHERE keys.raw_key = $1
+)
+UPDATE asset_minting_batches
+SET minting_tx_psbt = $2, change_output_index = $3, assets_output_index = $4,
+    genesis_id = $5, universe_commitments = $6
+WHERE batch_id IN (SELECT batch_id FROM target_batch)
+RETURNING batch_id;
+
+-- name: BindMintingBatchWithTapSibling :exec
+WITH target_batch AS (
+    SELECT batch_id
+    FROM asset_minting_batches batches
+    JOIN internal_keys keys
+        ON batches.batch_id = keys.key_id
+    WHERE keys.raw_key = $1
+)
+UPDATE asset_minting_batches
+SET tapscript_sibling = $2
+WHERE batch_id IN (SELECT batch_id FROM target_batch);
+
+-- name: UpdateBatchGenesisTx :exec
+WITH target_batch AS (
+    SELECT batch_id
+    FROM asset_minting_batches batches
+    JOIN internal_keys keys
+        ON batches.batch_id = keys.key_id
+    WHERE keys.raw_key = $1
+)
+UPDATE asset_minting_batches
+SET minting_tx_psbt = $2
+WHERE batch_id in (SELECT batch_id FROM target_batch);
+
+-- name: UpsertChainTx :one
+INSERT INTO chain_txns (
+    txid, raw_tx, chain_fees, block_height, block_hash, tx_index
+) VALUES (
+    $1, $2, $3, sqlc.narg('block_height'), sqlc.narg('block_hash'),
+    sqlc.narg('tx_index')
+) ON CONFLICT (txid)
+    -- Not a NOP but instead update any nullable fields that aren't null in the
+    -- args.
+    DO UPDATE SET block_height = COALESCE(EXCLUDED.block_height, chain_txns.block_height),
+                  block_hash = COALESCE(EXCLUDED.block_hash, chain_txns.block_hash),
+                  tx_index = COALESCE(EXCLUDED.tx_index, chain_txns.tx_index)
+RETURNING txn_id;
+
+-- name: FetchChainTx :one
+SELECT *
+FROM chain_txns
+WHERE txid = $1;
+
+-- name: UpsertManagedUTXO :one
+WITH target_key(key_id) AS (
+    SELECT key_id
+    FROM internal_keys
+    WHERE raw_key = $1
+)
+INSERT INTO managed_utxos (
+    outpoint, amt_sats, internal_key_id, tapscript_sibling, merkle_root, txn_id,
+    taproot_asset_root, root_version
+) VALUES (
+    $2, $3, (SELECT key_id FROM target_key), $4, $5, $6, $7, $8
+) ON CONFLICT (outpoint)
+   -- Not a NOP but instead update any nullable fields that aren't null in the
+   -- args.
+   DO UPDATE SET tapscript_sibling = COALESCE(EXCLUDED.tapscript_sibling, managed_utxos.tapscript_sibling)
+RETURNING utxo_id;
+
+-- name: FetchManagedUTXO :one
+SELECT *
+FROM managed_utxos utxos
+JOIN internal_keys keys
+    ON utxos.internal_key_id = keys.key_id
+WHERE (
+    (txn_id = sqlc.narg('txn_id') OR sqlc.narg('txn_id') IS NULL) AND
+    (utxos.outpoint = sqlc.narg('outpoint') OR sqlc.narg('outpoint') IS NULL)
+);
+
+-- name: FetchManagedUTXOs :many
+SELECT *
+FROM managed_utxos utxos
+JOIN internal_keys keys
+    ON utxos.internal_key_id = keys.key_id;
+
+-- name: AnchorPendingAssets :exec
+WITH assets_to_update AS (
+    SELECT script_key_id
+    FROM assets 
+    JOIN genesis_assets 
+        ON assets.genesis_id = genesis_assets.gen_asset_id
+    JOIN genesis_points
+        ON genesis_points.genesis_id = genesis_assets.genesis_point_id
+    WHERE prev_out = $1
+)
+UPDATE assets
+SET anchor_utxo_id = $2
+WHERE script_key_id in (SELECT script_key_id FROM assets_to_update);
+
+-- name: AssetsByGenesisPoint :many
+SELECT *
+FROM assets 
+JOIN genesis_assets 
+    ON assets.genesis_id = genesis_assets.gen_asset_id
+JOIN genesis_points
+    ON genesis_points.genesis_id = genesis_assets.genesis_point_id
+WHERE prev_out = $1;
+
+-- name: GenesisAssets :many
+SELECT * 
+FROM genesis_assets;
+
+-- name: GenesisPoints :many
+SELECT *
+FROM genesis_points;
+
+-- name: FetchGenesisID :one
+WITH target_point(genesis_id) AS (
+    SELECT genesis_id
+    FROM genesis_points
+    WHERE genesis_points.prev_out = @prev_out
+)
+SELECT gen_asset_id
+FROM genesis_assets
+LEFT JOIN assets_meta   
+    ON genesis_assets.meta_data_id = assets_meta.meta_id
+WHERE (
+    genesis_assets.genesis_point_id IN (SELECT genesis_id FROM target_point) AND
+    genesis_assets.asset_id = @asset_id AND
+    genesis_assets.asset_tag = @asset_tag AND
+    assets_meta.meta_data_hash = @meta_hash AND
+    genesis_assets.output_index = @output_index AND
+    genesis_assets.asset_type = @asset_type
+);
+
+-- name: FetchGenesisIDByAssetID :one
+SELECT gen_asset_id
+FROM genesis_assets
+WHERE asset_id = $1;
+
+-- name: FetchAssetsByAnchorTx :many
+SELECT *
+FROM assets
+WHERE anchor_utxo_id = $1;
+
+-- name: AnchorGenesisPoint :exec
+WITH target_point(genesis_id) AS (
+    SELECT genesis_id
+    FROM genesis_points
+    WHERE genesis_points.prev_out = $1
+)
+UPDATE genesis_points
+SET anchor_tx_id = $2
+WHERE genesis_id in (SELECT genesis_id FROM target_point);
+
+-- name: FetchGenesisPointByAnchorTx :one
+SELECT * 
+FROM genesis_points
+WHERE anchor_tx_id = $1;
+
+-- name: FetchGenesisByID :one
+SELECT
+    asset_id, asset_tag, assets_meta.meta_data_hash, output_index, asset_type,
+    genesis_points.prev_out prev_out
+FROM genesis_assets
+LEFT JOIN assets_meta
+    ON genesis_assets.meta_data_id = assets_meta.meta_id
+JOIN genesis_points
+  ON genesis_assets.genesis_point_id = genesis_points.genesis_id
+WHERE gen_asset_id = $1;
+
+-- name: ConfirmChainTx :exec
+WITH target_txn(txn_id) AS (
+    SELECT anchor_tx_id
+    FROM genesis_points points
+    JOIN asset_minting_batches batches
+        ON batches.genesis_id = points.genesis_id
+    JOIN internal_keys keys
+        ON batches.batch_id = keys.key_id
+    WHERE keys.raw_key = $1
+)
+UPDATE chain_txns
+SET block_height = $2, block_hash = $3, tx_index = $4
+WHERE txn_id in (SELECT txn_id FROM target_txn);
+
+-- name: FetchAssetID :many
+SELECT asset_id
+    FROM assets
+    JOIN script_keys 
+        ON assets.script_key_id = script_keys.script_key_id
+    JOIN managed_utxos utxos
+        ON assets.anchor_utxo_id = utxos.utxo_id
+    WHERE
+        (script_keys.tweaked_script_key = sqlc.narg('tweaked_script_key')
+            OR sqlc.narg('tweaked_script_key') IS NULL)
+        AND (utxos.outpoint = sqlc.narg('outpoint')
+            OR sqlc.narg('outpoint') IS NULL);
+
+-- name: UpsertAssetProofByID :exec
+INSERT INTO asset_proofs (
+    asset_id, proof_file
+) VALUES (
+    @asset_id, @proof_file
+) ON CONFLICT (asset_id)
+    -- This is not a NOP, we always overwrite the proof with the new one.
+    DO UPDATE SET proof_file = EXCLUDED.proof_file;
+
+-- name: FetchAssetProofs :many
+WITH asset_info AS (
+    SELECT assets.asset_id, script_keys.tweaked_script_key
+    FROM assets
+    JOIN script_keys
+        ON assets.script_key_id = script_keys.script_key_id
+)
+SELECT asset_info.tweaked_script_key AS script_key, asset_proofs.proof_file
+FROM asset_proofs
+JOIN asset_info
+    ON asset_info.asset_id = asset_proofs.asset_id;
+
+-- name: FetchAssetProofsSizes :many
+SELECT script_keys.tweaked_script_key AS script_key, 
+       LENGTH(asset_proofs.proof_file) AS proof_file_length
+FROM asset_proofs
+JOIN assets
+    ON asset_proofs.asset_id = assets.asset_id
+JOIN script_keys
+    ON assets.script_key_id = script_keys.script_key_id;
+
+-- name: FetchAssetProofsByAssetID :many
+WITH asset_info AS (
+    SELECT assets.asset_id, script_keys.tweaked_script_key
+    FROM assets
+    JOIN script_keys
+        ON assets.script_key_id = script_keys.script_key_id
+    JOIN genesis_assets gen
+        ON assets.genesis_id = gen.gen_asset_id
+    WHERE gen.asset_id = $1
+)
+SELECT asset_info.tweaked_script_key AS script_key, asset_proofs.proof_file
+FROM asset_proofs
+JOIN asset_info
+    ON asset_info.asset_id = asset_proofs.asset_id;
+
+-- name: FetchAssetProof :many
+WITH asset_info AS (
+    SELECT assets.asset_id, script_keys.tweaked_script_key, utxos.outpoint
+    FROM assets
+    JOIN script_keys
+        ON assets.script_key_id = script_keys.script_key_id
+    JOIN managed_utxos utxos
+        ON assets.anchor_utxo_id = utxos.utxo_id
+    JOIN genesis_assets
+         ON assets.genesis_id = genesis_assets.gen_asset_id
+   WHERE script_keys.tweaked_script_key = $1
+     AND (utxos.outpoint = sqlc.narg('outpoint') OR sqlc.narg('outpoint') IS NULL)
+     AND (genesis_assets.asset_id = sqlc.narg('asset_id') OR sqlc.narg('asset_id') IS NULL)
+)
+SELECT asset_info.tweaked_script_key AS script_key, asset_proofs.proof_file,
+       asset_info.asset_id as asset_id, asset_proofs.proof_id as proof_id,
+       asset_info.outpoint as outpoint
+FROM asset_proofs
+JOIN asset_info
+  ON asset_info.asset_id = asset_proofs.asset_id;
+
+-- name: HasAssetProof :one
+WITH asset_info AS (
+    SELECT assets.asset_id
+    FROM assets
+    JOIN script_keys
+        ON assets.script_key_id = script_keys.script_key_id
+    WHERE script_keys.tweaked_script_key = $1
+)
+SELECT COUNT(asset_info.asset_id) > 0 as has_proof
+FROM asset_proofs
+JOIN asset_info
+    ON asset_info.asset_id = asset_proofs.asset_id;
+
+-- name: UpsertAssetWitness :exec
+INSERT INTO asset_witnesses (
+    asset_id, prev_out_point, prev_asset_id, prev_script_key, witness_stack,
+    split_commitment_proof, witness_index
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7
+)  ON CONFLICT (asset_id, witness_index)
+    -- We overwrite the witness with the new one.
+    DO UPDATE SET prev_out_point = EXCLUDED.prev_out_point,
+                  prev_asset_id = EXCLUDED.prev_asset_id,
+                  prev_script_key = EXCLUDED.prev_script_key,
+                  witness_stack = EXCLUDED.witness_stack,
+                  split_commitment_proof = EXCLUDED.split_commitment_proof;
+
+-- name: FetchAssetWitnesses :many
+SELECT 
+    assets.asset_id, prev_out_point, prev_asset_id, prev_script_key, 
+    witness_stack, split_commitment_proof
+FROM asset_witnesses
+JOIN assets
+    ON asset_witnesses.asset_id = assets.asset_id
+WHERE (
+    (assets.asset_id = sqlc.narg('asset_id')) OR (sqlc.narg('asset_id') IS NULL)
+)
+ORDER BY witness_index;
+
+-- name: DeleteManagedUTXO :exec
+DELETE FROM managed_utxos
+WHERE outpoint = $1;
+
+-- name: UpdateUTXOLease :exec
+UPDATE managed_utxos
+SET lease_owner = @lease_owner, lease_expiry = @lease_expiry
+WHERE outpoint = @outpoint;
+
+-- name: DeleteUTXOLease :exec
+UPDATE managed_utxos
+SET lease_owner = NULL, lease_expiry = NULL
+WHERE outpoint = @outpoint;
+
+-- name: DeleteExpiredUTXOLeases :exec
+UPDATE managed_utxos
+SET lease_owner = NULL, lease_expiry = NULL
+WHERE lease_owner IS NOT NULL AND
+      lease_expiry IS NOT NULL AND
+      lease_expiry < @now;
+
+-- name: ConfirmChainAnchorTx :exec
+UPDATE chain_txns
+SET block_height = $2, block_hash = $3, tx_index = $4
+WHERE txid = $1;
+
+-- name: UpsertScriptKey :one
+INSERT INTO script_keys (
+    internal_key_id, tweaked_script_key, tweak, key_type
+) VALUES (
+    $1, $2, $3, $4
+)  ON CONFLICT (tweaked_script_key)
+    -- Overwrite the declared_known, key_type and tweak fields if they were
+    -- previously unknown.
+    DO UPDATE SET 
+      tweaked_script_key = EXCLUDED.tweaked_script_key,
+      -- If the tweak was previously unknown, we'll update to the new value.
+      tweak =
+          CASE
+             WHEN script_keys.tweak IS NULL
+             THEN COALESCE(EXCLUDED.tweak, script_keys.tweak)
+             ELSE script_keys.tweak
+           END,
+      -- We only overwrite the key type with a value that does not mean
+      -- "unknown" (0 or NULL).
+        key_type =
+          CASE
+             WHEN COALESCE(EXCLUDED.key_type, 0) != 0
+             THEN EXCLUDED.key_type
+             ELSE script_keys.key_type
+           END
+RETURNING script_key_id;
+
+-- name: FetchScriptKeyIDByTweakedKey :one
+SELECT script_key_id
+FROM script_keys
+WHERE tweaked_script_key = $1;
+
+-- name: FetchScriptKeyByTweakedKey :one
+SELECT sqlc.embed(script_keys), sqlc.embed(internal_keys)
+FROM script_keys
+JOIN internal_keys
+  ON script_keys.internal_key_id = internal_keys.key_id
+WHERE script_keys.tweaked_script_key = $1;
+
+-- name: FetchUnknownTypeScriptKeys :many
+SELECT sqlc.embed(script_keys), sqlc.embed(internal_keys)
+FROM script_keys
+JOIN internal_keys
+  ON script_keys.internal_key_id = internal_keys.key_id
+WHERE script_keys.key_type IS NULL;
+
+-- name: FetchInternalKeyLocator :one
+SELECT key_family, key_index
+FROM internal_keys
+WHERE raw_key = $1;
+
+-- name: UpsertTapscriptTreeRootHash :one
+INSERT INTO tapscript_roots (
+    root_hash, branch_only
+) VALUES (
+    $1, $2
+) ON CONFLICT (root_hash)
+    -- This is a NOP, the root_hash is the unique field that caused the
+    -- conflict. The tree should be deleted before switching between branch and
+    -- leaf storage for the same root hash.
+    DO UPDATE SET root_hash = EXCLUDED.root_hash
+RETURNING root_id;
+
+-- name: UpsertTapscriptTreeNode :one
+INSERT INTO tapscript_nodes (
+    raw_node
+) VALUES (
+    $1
+) ON CONFLICT (raw_node)
+    -- This is a NOP, raw_node is the unique field that caused the conflict.
+    DO UPDATE SET raw_node = EXCLUDED.raw_node
+RETURNING node_id;
+
+-- name: UpsertTapscriptTreeEdge :one
+INSERT INTO tapscript_edges (
+    root_hash_id, node_index, raw_node_id
+) VALUES (
+    $1, $2, $3
+) ON CONFLICT (root_hash_id, node_index, raw_node_id)
+    -- This is a NOP, root_hash_id, node_index, and raw_node_id are the unique
+    -- fields that caused the conflict.
+    DO UPDATE SET root_hash_id = EXCLUDED.root_hash_id,
+    node_index = EXCLUDED.node_index, raw_node_id = EXCLUDED.raw_node_id
+RETURNING edge_id;
+
+-- name: FetchTapscriptTree :many
+WITH tree_info AS (
+    -- This CTE is used to fetch all edges that link the given tapscript tree
+    -- root hash to child nodes. Each edge also contains the index of the child
+    -- node in the tapscript tree.
+    SELECT tapscript_roots.branch_only, tapscript_edges.raw_node_id,
+        tapscript_edges.node_index
+    FROM tapscript_roots
+    JOIN tapscript_edges
+        ON tapscript_roots.root_id = tapscript_edges.root_hash_id
+    WHERE tapscript_roots.root_hash = @root_hash
+)
+SELECT tree_info.branch_only, tapscript_nodes.raw_node
+FROM tapscript_nodes
+JOIN tree_info
+    ON tree_info.raw_node_id = tapscript_nodes.node_id
+-- Sort the nodes by node_index here instead of returning the indices.
+ORDER BY tree_info.node_index ASC;
+
+-- name: DeleteTapscriptTreeEdges :exec
+WITH tree_info AS (
+    -- This CTE is used to fetch all edges that link the given tapscript tree
+    -- root hash to child nodes.
+    SELECT tapscript_edges.edge_id
+    FROM tapscript_edges
+    JOIN tapscript_roots
+        ON tapscript_edges.root_hash_id = tapscript_roots.root_id
+    WHERE tapscript_roots.root_hash = @root_hash
+)
+DELETE FROM tapscript_edges
+WHERE edge_id IN (SELECT edge_id FROM tree_info);
+
+-- name: DeleteTapscriptTreeNodes :exec
+DELETE FROM tapscript_nodes
+WHERE NOT EXISTS (
+    SELECT 1
+        FROM tapscript_edges
+        -- Delete any node that is not referenced by any edge.
+        WHERE tapscript_edges.raw_node_id = tapscript_nodes.node_id
+);
+
+-- name: DeleteTapscriptTreeRoot :exec
+DELETE FROM tapscript_roots
+WHERE root_hash = @root_hash;
+
+-- name: FetchGenesisByAssetID :one
+SELECT * 
+FROM genesis_info_view
+WHERE asset_id = $1;
+
+-- name: FetchGenesisByGroupKey :one
+SELECT gv.*
+FROM genesis_info_view AS gv
+JOIN key_group_info_view AS kgv
+    ON gv.gen_asset_id = kgv.gen_asset_id
+WHERE kgv.tweaked_group_key = $1;
+
+-- name: UpsertAssetMeta :one
+INSERT INTO assets_meta (
+    meta_data_hash, meta_data_blob, meta_data_type, meta_decimal_display,
+    meta_universe_commitments, meta_canonical_universes, meta_delegation_key
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7
+) ON CONFLICT (meta_data_hash)
+    -- In this case, we may be inserting the data+type for an existing blob. So
+    -- we'll set all of those values. At this layer we assume the meta hash
+    -- has been validated elsewhere.
+    DO UPDATE SET meta_data_blob = COALESCE(EXCLUDED.meta_data_blob, assets_meta.meta_data_blob),
+                  meta_data_type = COALESCE(EXCLUDED.meta_data_type, assets_meta.meta_data_type),
+                  meta_decimal_display = COALESCE(EXCLUDED.meta_decimal_display, assets_meta.meta_decimal_display),
+                  meta_universe_commitments = COALESCE(EXCLUDED.meta_universe_commitments, assets_meta.meta_universe_commitments),
+                  meta_canonical_universes = COALESCE(EXCLUDED.meta_canonical_universes, assets_meta.meta_canonical_universes),
+                  meta_delegation_key = COALESCE(EXCLUDED.meta_delegation_key, assets_meta.meta_delegation_key)
+        
+RETURNING meta_id;
+
+-- name: FetchAssetMeta :one
+SELECT sqlc.embed(assets_meta)
+FROM assets_meta
+WHERE meta_id = $1;
+
+-- name: FetchAssetMetaByHash :one
+SELECT sqlc.embed(assets_meta)
+FROM assets_meta
+WHERE meta_data_hash = $1;
+
+-- name: FetchAssetMetaForAsset :one
+SELECT sqlc.embed(assets_meta)
+FROM genesis_assets assets
+JOIN assets_meta
+    ON assets.meta_data_id = assets_meta.meta_id
+WHERE assets.asset_id = $1;
+
+-- name: FetchAllAssetMeta :many
+SELECT sqlc.embed(assets_meta), genesis_assets.asset_id
+FROM assets_meta
+JOIN genesis_assets
+    ON genesis_assets.meta_data_id = assets_meta.meta_id
+ORDER BY assets_meta.meta_id;
+
+-- name: UpsertSupplyPreCommit :one
+-- Upsert a supply pre-commit output that is not tied to a minting batch.
+INSERT INTO supply_pre_commits (
+    group_key,
+    taproot_internal_key,
+    outpoint,
+    chain_txn_db_id,
+    spent_by
+)
+VALUES (
+    @group_key,
+    @taproot_internal_key,
+    @outpoint,
+    @chain_txn_db_id,
+    sqlc.narg('spent_by')
+)
+ON CONFLICT(outpoint) DO UPDATE SET
+    group_key            = EXCLUDED.group_key,
+    taproot_internal_key = EXCLUDED.taproot_internal_key,
+    outpoint             = EXCLUDED.outpoint,
+    chain_txn_db_id      = EXCLUDED.chain_txn_db_id,
+    spent_by             = EXCLUDED.spent_by
+RETURNING id;
+
+-- name: UpsertMintSupplyPreCommit :one
+-- Upsert a supply pre-commit that is tied to a minting batch.
+-- The batch is resolved from @batch_key
+-- (internal_keys -> asset_minting_batches).
+-- The key is (batch_id, tx_output_index), where tx_output_index is the
+-- pre-commit output index in the batch’s mint anchor transaction.
+-- If a row exists for the same batch and index, update non-key fields only;
+-- the batch association is not changed.
+WITH target_batch AS (
+    -- This CTE is used to fetch the ID of a batch, based on the serialized
+    -- internal key associated with the batch.
+    -- Only yield a batch_id when the batch actually exists.
+    SELECT b.batch_id
+    FROM asset_minting_batches AS b
+             JOIN internal_keys AS k ON k.key_id = b.batch_id
+    WHERE k.raw_key = @batch_key
+)
+INSERT INTO mint_supply_pre_commits (
+    batch_id, tx_output_index, taproot_internal_key_id, group_key, spent_by,
+    outpoint
+)
+VALUES (
+    (SELECT batch_id FROM target_batch), @tx_output_index,
+    @taproot_internal_key_id, @group_key, sqlc.narg('spent_by'),
+    @outpoint
+)
+ON CONFLICT(batch_id, tx_output_index) DO UPDATE SET
+    -- The following fields are updated if a conflict occurs.
+    taproot_internal_key_id = EXCLUDED.taproot_internal_key_id,
+    group_key = EXCLUDED.group_key,
+    outpoint = EXCLUDED.outpoint
+RETURNING id;
+
+-- name: FetchMintSupplyPreCommits :many
+-- Fetch records from the supply_pre_commits table with optional
+-- filtering.
+SELECT
+    precommits.id,
+    precommits.batch_id,
+    precommits.tx_output_index,
+    precommits.group_key,
+    precommits.spent_by,
+    batch_internal_keys.raw_key AS batch_key,
+    precommits.taproot_internal_key_id,
+    precommits.outpoint,
+    sqlc.embed(taproot_internal_keys)
+FROM mint_supply_pre_commits AS precommits
+    JOIN internal_keys taproot_internal_keys
+        ON precommits.taproot_internal_key_id = taproot_internal_keys.key_id
+    LEFT JOIN asset_minting_batches batches
+        ON precommits.batch_id = batches.batch_id
+    LEFT JOIN internal_keys batch_internal_keys
+        ON batches.batch_id = batch_internal_keys.key_id
+WHERE (
+    (batch_internal_keys.raw_key = sqlc.narg('batch_key') OR sqlc.narg('batch_key') IS NULL) AND
+    (precommits.group_key = sqlc.narg('group_key') OR sqlc.narg('group_key') IS NULL) AND
+    (taproot_internal_keys.raw_key = sqlc.narg('taproot_internal_key_raw') OR sqlc.narg('taproot_internal_key_raw') IS NULL)
+);

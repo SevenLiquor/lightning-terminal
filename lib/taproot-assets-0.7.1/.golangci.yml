@@ -1,0 +1,90 @@
+version: "2"
+linters:
+  enable:
+    - errorlint
+    - exhaustive
+    - gocritic
+    - gosec
+    - lll
+    - nilerr
+    - tagliatelle
+    - unconvert
+    - whitespace
+  settings:
+    errorlint:
+      asserts: false
+      comparison: false
+    exhaustive:
+      default-signifies-exhaustive: true
+    gocritic:
+      disabled-checks:
+        - unslice
+        - captLocal
+        - underef
+        - appendAssign
+        - exitAfterDefer
+    gosec:
+      excludes:
+        - G402 # Look for bad TLS connection settings
+        - G306 # Poor file permissions used when writing to a new file.
+        - G601 # Implicit memory aliasing in for loop.
+        - G115 # Integer overflow conversion.
+    lll:
+      # Max line length, lines longer will be reported.
+      line-length: 80
+      # Tab width in spaces.
+      tab-width: 8
+    staticcheck:
+      checks:
+        - -SA1019
+    tagliatelle:
+      case:
+        rules:
+          json: snake
+    whitespace:
+      multi-if: true
+      multi-func: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Exclude gosec from running for tests so that tests with weak randomness
+      # (math/rand) will pass the linter.
+      - linters:
+          - gosec
+        path: _test\.go
+      - linters:
+          - gosec
+        path: mock.go
+      - linters:
+          - gosec
+        path: internal/test/.*
+      # Fix false positives because of build flags in itest directory.
+      - linters:
+          - deadcode
+          - unused
+          - varcheck
+        path: itest/.*
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+issues:
+  new-from-rev: 002f4ac35f343797e0a1a07a505c65a94d9dd4b3
+formatters:
+  enable:
+    - gofmt
+  settings:
+    gofmt:
+      # simplify code: gofmt with `-s` option, true by default
+      simplify: true
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

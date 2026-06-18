@@ -1,0 +1,53 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+.DS_Store
+tapcli-debug
+tapd-debug
+/tapcli
+/tapd
+cmd/tapcli/tapcli
+cmd/tapd/tapd
+
+/itest/lnd-itest
+/itest/btcd-itest
+/itest/chantools
+/itest/regtest/*
+/itest/*.log
+/itest/*.log.*
+/itest/.backendlogs/*
+/itest/.minerlogs/*
+/itest/tapd-itest
+/itest/itest.test
+
+/docs/examples/basic-price-oracle/basic-price-oracle
+
+# Test binary, built with `go test -c`
+*.test
+
+# Ignore Rapid testing framework .fail files. These files are used for
+# reproducing test failures locally during development.
+*.fail
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+coverage.*
+
+# Sed backup files.
+*.bak
+
+# Editor configs.
+*.idea
+*.iml
+*.code-workspace
+.vscode/
+
+# Dependency directories (remove the comment below to include it)
+vendor/
+
+# Release builds
+/taproot-assets-*
+.aider*
