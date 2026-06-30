@@ -117,6 +117,19 @@ type Payload struct {
 	// totalAmtMsat holds the info provided in total_amount_msat when
 	// parsed from a TLV onion payload.
 	totalAmtMsat lnwire.MilliSatoshi
+
+	// assetAmtToForward holds the asset amount parsed from a TLV onion
+	// payload for pure asset forwarding.
+	assetAmtToForward uint64
+
+	// assetID holds the asset ID parsed from a TLV onion payload for
+	// pure asset forwarding.
+	assetID []byte
+
+	// assetFwdFlag holds the forwarding mode parsed from a TLV onion
+	// payload.
+	// 0 = traditional mode, 1 = pure asset mode.
+	assetFwdFlag uint8
 }
 
 // NewLegacyPayload builds a Payload from the amount, cltv, and next hop
@@ -139,15 +152,18 @@ func NewLegacyPayload(f *sphinx.HopData) *Payload {
 // does not perform validation of TLV types included in the payload.
 func ParseTLVPayload(r io.Reader) (*Payload, map[tlv.Type][]byte, error) {
 	var (
-		cid           uint64
-		amt           uint64
-		totalAmtMsat  uint64
-		cltv          uint32
-		mpp           = &record.MPP{}
-		amp           = &record.AMP{}
-		encryptedData []byte
-		blindingPoint *btcec.PublicKey
-		metadata      []byte
+		cid               uint64
+		amt               uint64
+		totalAmtMsat      uint64
+		cltv              uint32
+		mpp               = &record.MPP{}
+		amp               = &record.AMP{}
+		encryptedData     []byte
+		blindingPoint     *btcec.PublicKey
+		metadata          []byte
+		assetAmtToForward uint64
+		assetID           []byte
+		assetFwdFlag      uint8
 	)
 
 	tlvStream, err := tlv.NewStream(
@@ -160,6 +176,9 @@ func ParseTLVPayload(r io.Reader) (*Payload, map[tlv.Type][]byte, error) {
 		amp.Record(),
 		record.NewMetadataRecord(&metadata),
 		record.NewTotalAmtMsatBlinded(&totalAmtMsat),
+		record.NewAssetAmtToFwdRecord(&assetAmtToForward),
+		record.NewAssetIDRecord(&assetID),
+		record.NewAssetFwdFlagRecord(&assetFwdFlag),
 	)
 	if err != nil {
 		return nil, nil, err
@@ -205,13 +224,16 @@ func ParseTLVPayload(r io.Reader) (*Payload, map[tlv.Type][]byte, error) {
 			AmountToForward: lnwire.MilliSatoshi(amt),
 			OutgoingCTLV:    cltv,
 		},
-		MPP:           mpp,
-		AMP:           amp,
-		metadata:      metadata,
-		encryptedData: encryptedData,
-		blindingPoint: blindingPoint,
-		customRecords: customRecords,
-		totalAmtMsat:  lnwire.MilliSatoshi(totalAmtMsat),
+		MPP:               mpp,
+		AMP:               amp,
+		metadata:          metadata,
+		encryptedData:     encryptedData,
+		blindingPoint:     blindingPoint,
+		customRecords:     customRecords,
+		totalAmtMsat:      lnwire.MilliSatoshi(totalAmtMsat),
+		assetAmtToForward: assetAmtToForward,
+		assetID:           assetID,
+		assetFwdFlag:      assetFwdFlag,
 	}, parsedTypes, nil
 }
 
@@ -425,6 +447,23 @@ func (h *Payload) Metadata() []byte {
 // payee.
 func (h *Payload) TotalAmtMsat() lnwire.MilliSatoshi {
 	return h.totalAmtMsat
+}
+
+// AssetAmtToForward returns the asset amount to forward for pure asset
+// forwarding.
+func (h *Payload) AssetAmtToForward() uint64 {
+	return h.assetAmtToForward
+}
+
+// AssetID returns the asset ID for pure asset forwarding.
+func (h *Payload) AssetID() []byte {
+	return h.assetID
+}
+
+// AssetFwdFlag returns the forwarding mode flag:
+// 0 = traditional mode, 1 = pure asset mode.
+func (h *Payload) AssetFwdFlag() uint8 {
+	return h.assetFwdFlag
 }
 
 // getMinRequiredViolation checks for unrecognized required (even) fields in the

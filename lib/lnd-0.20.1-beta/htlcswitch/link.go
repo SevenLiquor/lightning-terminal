@@ -3170,6 +3170,42 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg) {
 				lnwire.ExperimentalEndorsementType,
 			)
 
+			// Check if this HTLC is in pure asset forwarding
+			// mode (AssetFwdFlag == 1) and has a non-zero
+			// asset amount. Check both onion payload fields
+			// and incoming wire custom records for maximum
+			// compatibility.
+			isAssetOnlyFwd := false
+			if pld.AssetFwdFlag() == 1 &&
+				pld.AssetAmtToForward() > 0 {
+				isAssetOnlyFwd = true
+			}
+			// Also check incoming wire custom records for
+			// SendToRouteV2 where asset TLV types are
+			// encoded as custom records (>= 65536).
+			// Check for AssetOnlyForward marker (65542) first.
+			if !isAssetOnlyFwd && len(add.CustomRecords) > 0 {
+				const assetOnlyFwdType uint64 = 65542
+				if marker, hasMarker := add.CustomRecords[
+					assetOnlyFwdType]; hasMarker &&
+					len(marker) > 0 && marker[0] == 0x01 {
+					isAssetOnlyFwd = true
+					l.log.Debugf("Asset only forward "+
+						"detected via 65542")
+				}
+			}
+			// Fallback: check for AssetAmt (65536) in incoming
+			// wire custom records as a trigger.
+			if !isAssetOnlyFwd && len(add.CustomRecords) > 0 {
+				const assetAmtType uint64 = 65536
+				if _, hasAmt := add.CustomRecords[
+					assetAmtType]; hasAmt {
+					isAssetOnlyFwd = true
+					l.log.Debugf("Asset only forward "+
+						"detected via 65536")
+				}
+			}
+
 			switch fwdPkg.State {
 			case channeldb.FwdStateProcessed:
 				// This add was not forwarded on the previous
@@ -3191,12 +3227,44 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg) {
 					BlindingPoint: fwdInfo.NextBlinding,
 				}
 
-				endorseValue.WhenSome(func(e byte) {
-					custRecords := map[uint64][]byte{
-						endorseType: {e},
+				// If this HTLC is in pure asset forwarding
+				// mode, add the AssetOnlyForward flag and
+				// pass through asset custom records.
+				// Keep the BTC amount unchanged for proper
+				// link bandwidth accounting.
+				if isAssetOnlyFwd {
+					custRecords := make(
+						lnwire.CustomRecords,
+					)
+
+					// Pass through asset-related
+					// custom records from incoming
+					// wire.
+					const assetCustomRangeStart = 65536
+					for k, v := range add.CustomRecords {
+						if k >= assetCustomRangeStart {
+							custRecords[k] = v
+						}
 					}
 
+					// AssetOnlyForward TLV type = 65542.
+					const assetOnlyFwdTLVType = 65542
+					custRecords[
+						assetOnlyFwdTLVType,
+					] = []byte{0x01}
+
 					outgoingAdd.CustomRecords = custRecords
+				}
+
+				endorseValue.WhenSome(func(e byte) {
+					if outgoingAdd.CustomRecords == nil {
+						outgoingAdd.CustomRecords = make(
+							lnwire.CustomRecords,
+						)
+					}
+					outgoingAdd.CustomRecords[
+						endorseType,
+					] = []byte{e}
 				})
 
 				// Finally, we'll encode the onion packet for
@@ -3249,10 +3317,58 @@ func (l *channelLink) processRemoteAdds(fwdPkg *channeldb.FwdPkg) {
 				BlindingPoint: fwdInfo.NextBlinding,
 			}
 
-			endorseValue.WhenSome(func(e byte) {
-				addMsg.CustomRecords = map[uint64][]byte{
-					endorseType: {e},
+			// If this HTLC is in pure asset forwarding mode,
+			// we use dust BTC amount and pass through the
+			// asset-related custom records from the incoming
+			// wire, plus set the AssetOnlyForward flag
+			// (TLV type 65542).
+			if isAssetOnlyFwd {
+				// Keep the original BTC amount for proper
+				// link bandwidth accounting. The dust
+				// conversion happens in ProduceHtlcExtraData.
+				l.log.Debugf("Pure asset forwarding: "+
+					"keeping amt=%v, asset_amt=%d, "+
+					"asset_id=%x",
+					addMsg.Amount,
+					pld.AssetAmtToForward(),
+					pld.AssetID())
+
+				// Pass through asset-related custom
+				// records from the incoming wire to the
+				// outgoing HTLC. Asset TLV types live
+				// in the custom range (>= 65536).
+				if addMsg.CustomRecords == nil {
+					addMsg.CustomRecords = make(
+						lnwire.CustomRecords,
+					)
 				}
+
+				// Copy all custom records from the
+				// incoming wire that are in the
+				// asset-related range (>= 65536) to
+				// the outgoing HTLC.
+				const assetCustomRangeStart = 65536
+				for k, v := range add.CustomRecords {
+					if k >= assetCustomRangeStart {
+						addMsg.CustomRecords[k] = v
+					}
+				}
+
+				// AssetOnlyForward TLV type = 65542.
+				// Value 0x01 means true.
+				const assetOnlyFwdTLVType = 65542
+				addMsg.CustomRecords[
+					assetOnlyFwdTLVType,
+				] = []byte{0x01}
+			}
+
+			endorseValue.WhenSome(func(e byte) {
+				if addMsg.CustomRecords == nil {
+					addMsg.CustomRecords = make(
+						lnwire.CustomRecords,
+					)
+				}
+				addMsg.CustomRecords[endorseType] = []byte{e}
 			})
 
 			// Finally, we'll encode the onion packet for the

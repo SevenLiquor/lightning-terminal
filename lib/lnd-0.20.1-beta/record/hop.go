@@ -33,6 +33,25 @@ const (
 	// TotalAmtMsatBlindedType is the type used in the onion for the total
 	// amount field that is included in the final hop for blinded payments.
 	TotalAmtMsatBlindedType tlv.Type = 18
+
+	// AssetAmtOnionType is the type used in the onion to reference the
+	// asset amount to send to the next hop for pure asset forwarding.
+	// Pure asset forwarding skips the BTC <-> asset conversion step.
+	AssetAmtOnionType tlv.Type = 65536
+
+	// AssetIDOnionType is the type used in the onion to reference the
+	// asset ID for pure asset forwarding.
+	AssetIDOnionType tlv.Type = 65537
+
+	// AssetRfqIDOnionType is the type used in the onion to reference an
+	// optional RFQ (Request for Quote) ID for pure asset forwarding.
+	AssetRfqIDOnionType tlv.Type = 65538
+
+	// AssetFwdFlagOnionType is the type used in the onion to indicate the
+	// forwarding mode for this payment.
+	// 0 = traditional mode (requires BTC conversion)
+	// 1 = pure asset mode (intermediate nodes pass assets directly)
+	AssetFwdFlagOnionType tlv.Type = 65539
 )
 
 // NewAmtToFwdRecord creates a tlv.Record that encodes the amount_to_forward
@@ -96,4 +115,35 @@ func NewTotalAmtMsatBlinded(amt *uint64) tlv.Record {
 		},
 		tlv.ETUint64, tlv.DTUint64,
 	)
+}
+
+// NewAssetAmtToFwdRecord creates a tlv.Record that encodes the asset amount
+// to forward (type 65536) for a pure asset forwarding onion payload.
+func NewAssetAmtToFwdRecord(amt *uint64) tlv.Record {
+	return tlv.MakeDynamicRecord(
+		AssetAmtOnionType, amt, func() uint64 {
+			return tlv.SizeTUint64(*amt)
+		},
+		tlv.ETUint64, tlv.DTUint64,
+	)
+}
+
+// NewAssetIDRecord creates a tlv.Record that encodes the asset ID
+// (type 65537) for a pure asset forwarding onion payload.
+func NewAssetIDRecord(id *[]byte) tlv.Record {
+	return tlv.MakeDynamicRecord(
+		AssetIDOnionType, id,
+		func() uint64 {
+			return uint64(len(*id))
+		},
+		tlv.EVarBytes, tlv.DVarBytes,
+	)
+}
+
+// NewAssetFwdFlagRecord creates a tlv.Record that encodes the asset
+// forwarding flag (type 65539) for a pure asset forwarding onion payload.
+// 0 = traditional mode (requires BTC conversion)
+// 1 = pure asset mode (intermediate nodes pass assets directly)
+func NewAssetFwdFlagRecord(flag *uint8) tlv.Record {
+	return tlv.MakePrimitiveRecord(AssetFwdFlagOnionType, flag)
 }

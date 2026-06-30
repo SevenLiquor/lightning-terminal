@@ -56,6 +56,12 @@ type (
 	// This list is only meant to be handled by the complementary LND
 	// instance via the AuxTrafficShaper hooks.
 	AvailableRfqIDsType = tlv.TlvType65540
+
+	// HtlcAssetOnlyFwdType is the type alias for the TLV type that is
+	// used to encode the asset-only forwarding flag within the custom
+	// records of an HTLC on the wire. When set to true, the HTLC is in
+	// pure asset mode and no BTC-ratio conversion should be performed.
+	HtlcAssetOnlyFwdType = tlv.TlvType65542
 )
 
 // SomeRfqIDRecord creates an optional record that represents an RFQ ID.
@@ -171,6 +177,12 @@ type Htlc struct {
 	// gets picked it will be encoded as an Htlc.RfqID (see above field).
 	AvailableRfqIDs tlv.OptionalRecordT[AvailableRfqIDsType, HtlcRfqIDs]
 
+	// AssetOnlyForward is a flag that indicates whether this HTLC is in
+	// pure asset forwarding mode. When set to true, no BTC-to-asset ratio
+	// conversion should be performed during forwarding, and the asset
+	// amounts should be passed through directly.
+	AssetOnlyForward bool
+
 	// NoopAdd is a flag that indicates whether this HTLC should be marked
 	// as a noop_add for LND. A noop_add HTLC behaves identically to a
 	// normal HTLC except for the settlement step, where the satoshi amount
@@ -266,6 +278,11 @@ func (h *Htlc) Records() []tlv.Record {
 		},
 	)
 
+	if h.AssetOnlyForward {
+		r := tlv.NewPrimitiveRecord[HtlcAssetOnlyFwdType](true)
+		records = append(records, r.Record())
+	}
+
 	if h.NoopAdd {
 		r := tlv.NewPrimitiveRecord[lnwallet.NoOpHtlcTLVType](true)
 		records = append(records, r.Record())
@@ -277,6 +294,11 @@ func (h *Htlc) Records() []tlv.Record {
 // SetNoopAdd flags the HTLC as a noop_add.
 func (h *Htlc) SetNoopAdd(noopActive bool) {
 	h.NoopAdd = noopActive
+}
+
+// SetAssetOnlyForward flags the HTLC as being in pure asset forwarding mode.
+func (h *Htlc) SetAssetOnlyForward(assetOnly bool) {
+	h.AssetOnlyForward = assetOnly
 }
 
 // Encode serializes the Htlc to the given io.Writer.
@@ -297,11 +319,21 @@ func (h *Htlc) Decode(r io.Reader) error {
 	rfqID := h.RfqID.Zero()
 	rfqIDs := h.AvailableRfqIDs.Zero()
 
+	// Inline asset-only-forward flag record. We use the raw
+	// MakePrimitiveRecord path because *bool is not in the Primitive
+	// constraint, but is supported by MakePrimitiveRecord internally.
+	assetOnlyFwd := false
+	var assetOnlyFwdType HtlcAssetOnlyFwdType
+	assetOnlyFwdRecord := tlv.MakePrimitiveRecord(
+		assetOnlyFwdType.TypeVal(), &assetOnlyFwd,
+	)
+
 	// Create the tlv stream.
 	tlvStream, err := tlv.NewStream(
 		h.Amounts.Record(),
 		rfqID.Record(),
 		rfqIDs.Record(),
+		assetOnlyFwdRecord,
 	)
 	if err != nil {
 		return err
@@ -318,6 +350,10 @@ func (h *Htlc) Decode(r io.Reader) error {
 
 	if val, ok := typeMap[h.AvailableRfqIDs.TlvType()]; ok && val == nil {
 		h.AvailableRfqIDs = tlv.SomeRecordT(rfqIDs)
+	}
+
+	if _, ok := typeMap[assetOnlyFwdType.TypeVal()]; ok {
+		h.AssetOnlyForward = assetOnlyFwd
 	}
 
 	return nil
@@ -387,11 +423,13 @@ func HtlcFromCustomRecords(records lnwire.CustomRecords) (*Htlc, error) {
 
 // HasAssetHTLCCustomRecords returns true if the given custom records contain
 // the custom records that we'd expect an asset HTLC to carry.
+// Note: the AssetOnlyForward marker (65542) is excluded because it is
+// a pure forwarding indicator that does not carry actual asset data.
 func HasAssetHTLCCustomRecords(records lnwire.CustomRecords) bool {
 	var (
-		amountType   HtlcAmountRecordType
-		rfqIDType    HtlcRfqIDType
-		availableIDs AvailableRfqIDsType
+		amountType      HtlcAmountRecordType
+		rfqIDType       HtlcRfqIDType
+		availableIDs    AvailableRfqIDsType
 	)
 	for key := range records {
 		if key == uint64(amountType.TypeVal()) {

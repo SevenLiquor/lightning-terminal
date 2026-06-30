@@ -183,6 +183,20 @@ type Hop struct {
 	// spread over more than one HTLC. This field should only be set for
 	// the final hop in a blinded path.
 	TotalAmtMsat lnwire.MilliSatoshi
+
+	// AssetAmtToForward is the amount of the asset to forward when this
+	// hop is part of a pure asset forwarding route. Only set for pure
+	// asset channels.
+	AssetAmtToForward uint64
+
+	// AssetID is the ID of the asset being forwarded in a pure asset
+	// forwarding route.
+	AssetID []byte
+
+	// AssetFwdFlag is the forwarding mode for this hop:
+	// 0 = traditional mode (requires BTC conversion)
+	// 1 = pure asset mode (intermediate nodes pass assets directly)
+	AssetFwdFlag uint8
 }
 
 // Copy returns a deep copy of the Hop.
@@ -202,6 +216,12 @@ func (h *Hop) Copy() *Hop {
 	if h.BlindingPoint != nil {
 		b := *h.BlindingPoint
 		c.BlindingPoint = &b
+	}
+
+	// Deep copy the AssetID slice to avoid aliasing.
+	if h.AssetID != nil {
+		c.AssetID = make([]byte, len(h.AssetID))
+		copy(c.AssetID, h.AssetID)
 	}
 
 	return &c
@@ -326,6 +346,27 @@ func (h *Hop) PackHopPayload(w io.Writer, nextChanID uint64,
 		totalAmtInt := uint64(h.TotalAmtMsat)
 		records = append(records,
 			record.NewTotalAmtMsatBlinded(&totalAmtInt),
+		)
+	}
+
+	// If this hop is part of a pure asset forwarding route, include the
+	// asset-specific TLV records.
+	if h.AssetAmtToForward != 0 {
+		records = append(records,
+			record.NewAssetAmtToFwdRecord(&h.AssetAmtToForward),
+		)
+	}
+
+	if h.AssetID != nil && len(h.AssetID) > 0 {
+		assetIDCopy := h.AssetID
+		records = append(records,
+			record.NewAssetIDRecord(&assetIDCopy),
+		)
+	}
+
+	if h.AssetFwdFlag != 0 {
+		records = append(records,
+			record.NewAssetFwdFlagRecord(&h.AssetFwdFlag),
 		)
 	}
 
@@ -468,6 +509,30 @@ func (h *Hop) PayloadSize(nextChanID uint64) uint64 {
 		addRecord(
 			record.TotalAmtMsatBlindedType,
 			tlv.SizeTUint64(uint64(h.AmtToForward)),
+		)
+	}
+
+	// Add asset amount size.
+	if h.AssetAmtToForward != 0 {
+		addRecord(
+			record.AssetAmtOnionType,
+			tlv.SizeTUint64(h.AssetAmtToForward),
+		)
+	}
+
+	// Add asset ID size.
+	if h.AssetID != nil && len(h.AssetID) > 0 {
+		addRecord(
+			record.AssetIDOnionType,
+			uint64(len(h.AssetID)),
+		)
+	}
+
+	// Add asset forwarding flag size.
+	if h.AssetFwdFlag != 0 {
+		addRecord(
+			record.AssetFwdFlagOnionType,
+			1, // uint8
 		)
 	}
 

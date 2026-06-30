@@ -467,6 +467,14 @@ func (s *AuxTrafficShaper) ProduceHtlcExtraData(totalAmount lnwire.MilliSatoshi,
 		return totalAmount, nil, nil
 	}
 
+	// Fast path: AssetOnlyForward marker (TLV 65542) in wire custom
+	// records. Skip RFQ, return dust BTC, keep asset records.
+	if marker, ok := htlcCustomRecords[65542]; ok && len(marker) > 0 && marker[0] == 0x01 {
+		return produceHtlcExtraDataAssetOnlyForward(
+			totalAmount, htlcCustomRecords, peer,
+		)
+	}
+
 	peerFeatures := s.cfg.AuxChanNegotiator.GetPeerFeatures(peer)
 	supportNoOp := peerFeatures.HasFeature(tapfeatures.NoOpHTLCsOptional)
 
@@ -631,4 +639,26 @@ func prettyPrintLocalView(view DecodedView) string {
 	}
 
 	return res
+}
+
+// produceHtlcExtraDataAssetOnlyForward handles ProduceHtlcExtraData for pure
+// asset forwarding (AssetOnlyForward marker 65542 set). It reads asset
+// amount from Onion TLV 65536 and returns dust BTC amount.
+func produceHtlcExtraDataAssetOnlyForward(
+	totalAmount lnwire.MilliSatoshi,
+	htlcCustomRecords lnwire.CustomRecords,
+	peer route.Vertex,
+) (lnwire.MilliSatoshi, lnwire.CustomRecords, error) {
+	amtBytes, ok := htlcCustomRecords[65536]
+	if !ok {
+		return 0, nil, fmt.Errorf("asset amount (65536) not found")
+	}
+	assetAmount := uint64(0)
+	for _, b := range amtBytes {
+		assetAmount = (assetAmount << 8) | uint64(b)
+	}
+	log.Infof("Pure asset forwarding ProduceHtlcExtraData: "+
+		"asset_amt=%d dust=%d", assetAmount,
+		rfqmath.DefaultOnChainHtlcMSat)
+	return rfqmath.DefaultOnChainHtlcMSat, htlcCustomRecords, nil
 }
